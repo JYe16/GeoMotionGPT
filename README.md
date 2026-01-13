@@ -8,11 +8,11 @@
 
 ![Teaser](assets/overall-v7.png)
 
-## 🔗 Resources
+<!-- ## 🔗 Resources
 
 - **Checkpoints:** [Download from SharePoint](https://fsu-my.sharepoint.com/:f:/g/personal/zy22b_fsu_edu/IgDx9QAD6u6PQKwZUMiNmV0zAavwneNHLTuNJDNfwlubH8A?e=yymbpA)
 
-Please place two check point files under checkpoints/
+Please place two check point files under checkpoints/ -->
 
 ## 🛠️ Setup
 
