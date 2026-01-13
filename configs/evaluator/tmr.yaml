@@ -1,0 +1,63 @@
+# tmr_model:
+#   params:
+#     # lambda weighting for the losses、
+#     lmd: {
+#       "recons": 1.0,
+#       "latent": 1e-05,
+#       "kl": 1e-05,
+#       "contrastive": 0.1
+#     }
+#     lr: 0.0001
+#     temperature: 0.1
+#     threshold_selfsim: 0.8
+#     threshold_selfsim_metrics: 0.95
+
+text_to_token_emb:
+    target: motGPT.archs.tmr_text_encoder.TokenEmbeddings
+    params:
+      path: 'deps/tmr/annotations/humanml3d'
+      modelname: 'distilbert-base-uncased'
+      preload: true
+
+text_to_sent_emb:
+    target: motGPT.archs.tmr_text_encoder.SentenceEmbeddings
+    params:
+      path: 'deps/tmr/annotations/humanml3d'
+      modelname: 'sentence-transformers/all-mpnet-base-v2'
+      preload: true
+
+tmr_motionencoder:
+  target: motGPT.archs.tmr_evaluator.ACTORStyleEncoder
+  params:
+    nfeats: 263
+    vae: true
+    latent_dim: 256
+    ff_size: 1024
+    num_layers: 6
+    num_heads: 4
+    dropout: 0.1
+    activation: 'gelu'
+
+tmr_textencoder:
+  target: motGPT.archs.tmr_evaluator.ACTORStyleEncoder
+  params:
+    nfeats: 768
+    vae: true
+    latent_dim: 256
+    ff_size: 1024
+    num_layers: 6
+    num_heads: 4
+    dropout: 0.1
+    activation: 'gelu'
+
+tmr_motiondecoder:
+  target: motGPT.archs.tmr_evaluator.ACTORStyleDecoder
+  params:
+    nfeats: 263
+    vae: true
+    latent_dim: 256
+    ff_size: 1024
+    num_layers: 6
+    num_heads: 4
+    dropout: 0.1
+    activation: 'gelu'

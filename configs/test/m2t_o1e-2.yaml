@@ -29,7 +29,7 @@ LORA:
     - c_proj
 
 TEST:
-  CHECKPOINTS: 'checkpoints/gpt2_m2t_ortho_ablations/gpt2-o1e-2-alt.ckpt'
+  CHECKPOINTS: 'checkpoints/GeoMotionGPT.ckpt'
   SPLIT: test
   BATCH_SIZE: 64
   REPLICATIONS: 1
@@ -54,10 +54,10 @@ DATASET:
   target: motGPT.data.HumanML3D_custom.HumanML3DDataModuleCustom
   CODE_PATH: motion_tokens_1cb
   HUMANML3D:
-    ROOT: /home/jackieye/code/llm-sensing/data/humanml3d_263/
+    ROOT: datasets/humanml3d/
     FPS: 20
     MIN_MOTION_LEN: 20 
-    MAX_MOTION_LEN: 200 
+    MAX_MOTION_LEN: 196 
 
 model:
   target: motGPT.models.geomotiongpt.GeoMotionGPT
