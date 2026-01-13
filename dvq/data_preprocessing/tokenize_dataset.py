@@ -3,12 +3,16 @@ import os
 import sys
 from tqdm import tqdm
 import numpy as np
+import torch
 
-project_root = '../../'
-sys.path.append(project_root)
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
+if project_root not in sys.path:
+    sys.path.append(project_root)
 
 # --- Import Your Custom Modules ---
 from dvq.utils.llm.general.motion_tokenizer import MotionTokenizer
+from dvq.softvq import VQVAE_148
+from dvq.utils.define_device import define_device
 
 
 def batch_tokenize(tokenizer: MotionTokenizer, motion_vec_dir: str, token_dir: str):
@@ -48,24 +52,43 @@ def batch_tokenize(tokenizer: MotionTokenizer, motion_vec_dir: str, token_dir: s
             # print(f"An error occurred while processing {filename}: {e}")
 
 
-def tokenize(data_root, model, vec_size, output_path):
+def tokenize(data_root, vec_size, down_t, vqvae_checkpoint, quantizer, nb_code):
     """
     Main execution function
     """
+    # 0. Load Model
+    device = define_device()
+    model = VQVAE_148(quantizer=quantizer, nb_code=nb_code, vec_size=vec_size, down_t=down_t)
+    checkpoint = torch.load(vqvae_checkpoint, map_location='cpu')
+    
+    # Handle state_dict keys mismatch (remove 'vqvae.' prefix if present)
+    new_state_dict = {}
+    for k, v in checkpoint.items():
+        if k.startswith('vqvae.'):
+            new_state_dict[k.replace('vqvae.', '')] = v
+        else:
+            new_state_dict[k] = v
+            
+    model.load_state_dict(new_state_dict)
+    model.to(device)
+    model.eval()
+
+    output_path = os.path.join(data_root, 'motion_tokens')
+    
     # 1. Initialize the tokenizer
     # We only need to initialize it once and then reuse it for all files for efficiency.
-    tokenizer = MotionTokenizer(model, data_root, vec_size)
+    tokenizer = MotionTokenizer(model, data_root, vqvae_checkpoint)
 
     # 2. Execute the batch processing
     batch_tokenize(tokenizer, os.path.join(data_root, 'new_joint_vecs'), output_path)
-    print(f"Token sequences have been saved to: {data_root}")
+    print(f"Token sequences have been saved to: {output_path}")
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_root', type=str, default='../../dataset/humanml3d/')
+    parser.add_argument('--data_root', type=str, default='datasets/humanml3d/')
     parser.add_argument('--vec_size', type=int, default=263)
-    parser.add_argument('--vqvae_checkpoint', type=str, default="../vqvae_checkpoints/humanml3d_263_gsst.pt")
+    parser.add_argument('--vqvae_checkpoint', type=str, default="checkpoints/dvq-gsst.pt")
     parser.add_argument('--quantizer', type=str, default="gsst")
     parser.add_argument('--nb_code', type=int, default=512)
     args = parser.parse_args()

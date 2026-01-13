@@ -34,15 +34,15 @@ from transformers import get_cosine_schedule_with_warmup
 #     pass
 
 from dvq.softvq import HumanVQVAE
-# 使用我们之前编写的、适配SMPL数据的数据加载器
+# Use the previously written data loader adapted for SMPL data
 from dvq.dataloader.humanml3d.humanml3d_263_dataset_mgpt import HumanML3DDataset
 from dvq.utils.define_num_workers import define_num_workers
 
 
 def calculate_loss_ortho(model):
     C = model.vqvae.quantizer.codebook.weight
-    C_norm = F.normalize(C, dim=-1)  # 对每个向量做 L2 归一化
-    G = C_norm @ C_norm.t()  # [K, K] Gram 矩阵
+    C_norm = F.normalize(C, dim=-1)  # L2 normalization for each vector
+    G = C_norm @ C_norm.t()  # [K, K] Gram matrix
     I = torch.eye(G.size(0), device=G.device, dtype=G.dtype)
     loss_ortho = F.mse_loss(G, I)
     return loss_ortho
@@ -53,7 +53,7 @@ def set_quantizer_requires_grad(flag: bool, quantizer_params):
         p.requires_grad = flag
 
 def main():
-    # --- 1. 参数解析 (Argument Parsing) ---
+    # --- 1. Argument Parsing ---
     parser = argparse.ArgumentParser(description="VQ-VAE Model Training Script")
     parser.add_argument('--data_root', type=str, default="datasets/humanml3d/")
     parser.add_argument('--num_epochs', type=int, default=500)
@@ -69,8 +69,8 @@ def main():
 
     args = parser.parse_args()
 
-    # --- 2. 准备工作 (Setup) ---
-    # 创建保存目录
+    # --- 2. Setup ---
+    # Create save directory
     now = datetime.now()
     working_dir = os.path.join('experiments', 'dvq',str(now.strftime("%m%d%Y") + '-' + args.quantizer + '-r' + str(args.ratio)) + '-c' + str(
                                    args.nb_code))
@@ -78,12 +78,12 @@ def main():
         shutil.rmtree(working_dir)
     os.makedirs(working_dir, exist_ok=True)
 
-    # 设置设备 (GPU or CPU)
+    # Set device (GPU or CPU)
     device = define_device()
     save_to_log(f"Using device: {device}", working_dir=working_dir, print_msg=True)
     save_to_log(f"Codebook Size: {args.nb_code}", working_dir=working_dir, print_msg=True)
 
-    # --- 3. 数据加载 (Data Loading) ---
+    # --- 3. Data Loading ---
     save_to_log("Loading dataset...", working_dir=working_dir, print_msg=True)
     # train_set = NTU60SklDataset(data_root=args.data_root, split="train", window_size=args.window_size)
     train_set = HumanML3DDataset(data_root=args.data_root, split="train", window_size=args.window_size)
@@ -95,8 +95,8 @@ def main():
     val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
                             pin_memory=True, drop_last=True)
 
-    # --- 4. 模型与优化器初始化 (Model & Optimizer) ---
-    # !!! 重要: 请确保这里的参数与您的 VQVAE 类定义一致
+    # --- 4. Model & Optimizer Initialization ---
+    # !!! IMPORTANT: Ensure parameters here match your VQVAE class definition
     # quantizer choices=['ema_reset', 'orig', 'ema', 'reset']
     model = HumanVQVAE(
         nb_code=args.nb_code,
@@ -133,14 +133,14 @@ def main():
 
     # Scheduler: Cosine Annealing with Warmup
     total_steps = len(train_loader) * args.num_epochs
-    warmup_steps = int(0.03 * total_steps)  # 可以改成其他比例
+    warmup_steps = int(0.03 * total_steps)  # Can be changed to other ratios
     scheduler = get_cosine_schedule_with_warmup(
         optimizer,
         num_warmup_steps=warmup_steps,
         num_training_steps=total_steps
     )
 
-    # --- 5. 训练与验证循环 (Training & Validation Loop) ---
+    # --- 5. Training & Validation Loop ---
     save_to_log("Starting training loop...", working_dir=working_dir, print_msg=True)
 
     # --- Initialize realtime plot ---
@@ -164,7 +164,7 @@ def main():
     tau_end = 0.01
 
     for epoch in range(args.num_epochs):
-        # --- 训练 ---
+        # --- Training ---
         model.train()
         
         train_loss_rec = 0.0
@@ -195,7 +195,7 @@ def main():
             batch = batch.to(device)
             optimizer.zero_grad()
 
-            # 前向传播
+            # Forward pass
             x_hat, loss_util, loss_self_entropy, util = model(batch)
 
             # Reconstruction Loss
@@ -208,12 +208,12 @@ def main():
             # Reduced loss_util weight from 1.0 to 0.02 because we have reset_dead_codes handling utilization now.
             loss = loss_rec + 0.25 * loss_util + loss_self_entropy + loss_ortho
 
-            # 反向传播和优化
+            # Backward pass and optimization
             loss.backward()
             optimizer.step()
             scheduler.step()
 
-            # 记录统计数据
+            # Record statistics
             train_loss_rec += loss_rec.item()
             train_loss_util += loss_util.item()
             train_loss_self_entropy += loss_self_entropy.item()
@@ -237,7 +237,7 @@ def main():
         avg_train_loss_ortho = train_loss_ortho / len(train_loader)
         avg_train_util = train_util / len(train_loader)
 
-        # --- 验证 ---
+        # --- Validation ---
         model.eval()
         val_loss_rec = 0.0
         val_loss_util = 0.0
@@ -281,8 +281,8 @@ def main():
             working_dir=working_dir, print_msg=True)
         save_to_log("----------------------------\n", working_dir=working_dir, print_msg=True)
 
-        # --- 6. 检查点保存 (Checkpoint Saving) ---
-        # 每10个epoch保存一次模型
+        # --- 6. Checkpoint Saving ---
+        # Save model every 10 epochs
         if (epoch + 1) % 100 == 0 and epoch != args.num_epochs - 1:
             # checkpoint_path = os.path.join(working_dir, f'vqvae_epoch_{epoch + 1}.pt')
             # torch.save(model.state_dict(), checkpoint_path)

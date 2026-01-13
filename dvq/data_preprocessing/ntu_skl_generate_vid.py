@@ -5,62 +5,62 @@ import numpy as np
 from scipy.interpolate import interp1d
 from matplotlib import pyplot as plt
 import matplotlib
-matplotlib.use('Agg')     # 防止多进程下找不到 X11
+matplotlib.use('Agg')     # Prevent X11 not found error under multiprocessing
 from tqdm.contrib.concurrent import process_map   # NEW
 
 opt_path = '/data/jackieye/ntu/vid_2/'
 
 # ============================================================
-# NTU-RGB+D Skeleton 关节索引说明
+# NTU-RGB+D Skeleton Joint Index Description
 # ------------------------------------------------------------
-# index_0  index_1  英文名             中文注释
+# index_0  index_1  English Name       Chinese Comment
 # ------------------------------------------------------------
-#    0        1     SpineBase          脊柱底端（骨盆中央）
-#    1        2     SpineMid           脊柱中段
-#    2        3     Neck               颈部
-#    3        4     Head               头部
-#    4        5     ShoulderLeft       左肩
-#    5        6     ElbowLeft          左肘
-#    6        7     WristLeft          左腕
-#    7        8     HandLeft           左手掌
-#    8        9     ShoulderRight      右肩
-#    9       10     ElbowRight         右肘
-#   10       11     WristRight         右腕
-#   11       12     HandRight          右手掌
-#   12       13     HipLeft            左髋
-#   13       14     KneeLeft           左膝
-#   14       15     AnkleLeft          左踝
-#   15       16     FootLeft           左脚
-#   16       17     HipRight           右髋
-#   17       18     KneeRight          右膝
-#   18       19     AnkleRight         右踝
-#   19       20     FootRight          右脚
-#   20       21     SpineShoulder      上胸椎（肩胛骨间）
-#   21       22     HandTipLeft        左手指尖
-#   22       23     ThumbLeft          左拇指尖
-#   23       24     HandTipRight       右手指尖
-#   24       25     ThumbRight         右拇指尖
+#    0        1     SpineBase          Spine Base (Center of Pelvis)
+#    1        2     SpineMid           Spine Mid
+#    2        3     Neck               Neck
+#    3        4     Head               Head
+#    4        5     ShoulderLeft       Shoulder Left
+#    5        6     ElbowLeft          Elbow Left
+#    6        7     WristLeft          Wrist Left
+#    7        8     HandLeft           Hand Left
+#    8        9     ShoulderRight      Shoulder Right
+#    9       10     ElbowRight         Elbow Right
+#   10       11     WristRight         Wrist Right
+#   11       12     HandRight          Hand Right
+#   12       13     HipLeft            Hip Left
+#   13       14     KneeLeft           Knee Left
+#   14       15     AnkleLeft          Ankle Left
+#   15       16     FootLeft           Foot Left
+#   16       17     HipRight           Hip Right
+#   17       18     KneeRight          Knee Right
+#   18       19     AnkleRight         Ankle Right
+#   19       20     FootRight          Foot Right
+#   20       21     SpineShoulder      Spine Shoulder (Between Scapulan)
+#   21       22     HandTipLeft        Hand Tip Left
+#   22       23     ThumbLeft          Thumb Left
+#   23       24     HandTipRight       Hand Tip Right
+#   24       25     ThumbRight         Thumb Right
 # ============================================================
 
-# ================== 关节分组（0-based 索引）==================
+# ================== Joint Groups (0-based Index) ==================
 JOINT_GROUPS = {
-    "torso":       [0, 1, 2, 3, 20],                    # 躯干
-    "left_arm":    [4, 5, 6, 7, 21, 22],                # 左臂＋手
-    "right_arm":   [8, 9, 10, 11, 23, 24],              # 右臂＋手
-    "left_leg":    [12, 13, 14, 15],                    # 左腿
-    "right_leg":   [16, 17, 18, 19],                    # 右腿
+    "torso":       [0, 1, 2, 3, 20],                    # Torso
+    "left_arm":    [4, 5, 6, 7, 21, 22],                # Left Arm + Hand
+    "right_arm":   [8, 9, 10, 11, 23, 24],              # Right Arm + Hand
+    "left_leg":    [12, 13, 14, 15],                    # Left Leg
+    "right_leg":   [16, 17, 18, 19],                    # Right Leg
 }
 
-# ================== 每个部位对应的颜色 ==================
+# ================== Colors corresponding to each part ==================
 COLOR_MAP = {
-    "torso":      "#FDB813",   # 金黄
-    "left_arm":   "#1F77B4",   # 蓝
-    "right_arm":  "#D62728",   # 红
-    "left_leg":   "#2CA02C",   # 绿
-    "right_leg":  "#9467BD",   # 紫
+    "torso":      "#FDB813",   # Golden Yellow
+    "left_arm":   "#1F77B4",   # Blue
+    "right_arm":  "#D62728",   # Red
+    "left_leg":   "#2CA02C",   # Green
+    "right_leg":  "#9467BD",   # Purple
 }
 
-# 反向映射：关节索引 → 颜色（便于快速查询）
+# Reverse mapping: Joint Index -> Color (for quick lookup)
 JOINT_COLOR = {}
 for part, joints in JOINT_GROUPS.items():
     for j in joints:

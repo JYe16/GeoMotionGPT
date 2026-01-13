@@ -38,3 +38,4 @@ tensorboardX==2.6.4
 tensorboard==2.20.0
 wandb==0.22.2
 smplx==0.1.28
+pyarrow==14.0.2

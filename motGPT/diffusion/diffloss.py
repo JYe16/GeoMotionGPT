@@ -16,13 +16,13 @@ class DiffLoss(nn.Module):
         self.in_size = target_size
         self.in_channels = target_channels
         self.multi_hidden = multi_hidden
-        out_channels = target_channels + target_channels*learn_sigma  # *2 for vlb loss， while learn_sigma=True
+        out_channels = target_channels + target_channels*learn_sigma  # *2 for vlb loss, while learn_sigma=True
         self.net = SimpleMLPAdaLN(
             in_size=target_size,
             multi_hidden=multi_hidden,
             in_channels=target_channels,
             model_channels=width,
-            out_channels=out_channels,  # *2 for vlb loss， while learn_sigma=True
+            out_channels=out_channels,  # *2 for vlb loss, while learn_sigma=True
             z_channels=z_channels,
             num_res_blocks=depth,
             grad_checkpointing=grad_checkpointing,

@@ -11,6 +11,42 @@
 
 - **Checkpoints:** [Download from SharePoint](https://fsu-my.sharepoint.com/:f:/g/personal/zy22b_fsu_edu/IgDx9QAD6u6PQKwZUMiNmV0zAavwneNHLTuNJDNfwlubH8A?e=yymbpA)
 
+Please place two check point files under checkpoints/
+
+## 🛠️ Setup
+
+### 🐍 Environment and Dependencies
+
+```bash
+conda create -n gmgpt python=3.11
+pip install -r requirements.txt
+```
+
+After installing the dependencies, please run:
+```bash
+python -m spacy download en_core_web_sm
+```
+
+### 📂 Dataset
+
+Please download and preprocess data directly from [HumanML3D](https://github.com/EricGuo5513/HumanML3D).
+
+To generate motion tokens using our pretrained DVQ, please run:
+
+```bash
+python dvq/data_preprocessing/tokenize_dataset.py 
+```
+
+## Inference
+
+After tokenizing the HumanML3D dataset using our DVQ, please run:
+
+```bash
+python test.py --cfg configs/test/m2t_o1e-2.yaml 
+```
+
+This command will evaluate our pretrained GPT2 model.
+
 ## 🖊️ Citation
 
 If you find our work useful for your research, please consider citing:

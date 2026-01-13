@@ -8,21 +8,21 @@ import os
 def load_and_save_full_llm(base_model_path, lora_adapter_path, output_path):
     os.makedirs(output_path, exist_ok=True)
 
-    # 1. 先加载底座
+    # 1. Load base model first
     model = AutoModelForCausalLM.from_pretrained(
         base_model_path,
-        torch_dtype=torch.float16,  # 或 float32
-        device_map="auto"  # 显存够可换成 "auto"
+        torch_dtype=torch.float16,  # or float32
+        device_map="auto"  # can calculate "auto" if VRAM is sufficient
     )
 
-    # 2. 挂载 LoRA 适配器
+    # 2. Mount LoRA adapter
     model = PeftModel.from_pretrained(model, lora_adapter_path)
 
-    # 3. 合并 & 卸掉 LoRA 层
-    merged_model = model.merge_and_unload()  # 关键一步！
+    # 3. Merge & unload LoRA layers
+    merged_model = model.merge_and_unload()  # Critical step!
     tokenizer = AutoTokenizer.from_pretrained(lora_adapter_path, use_fast=True)
 
-    # 4. 保存完整权重（按 2 GB 分片，safetensors 格式）
+    # 4. Save full weights (sharded by 2 GB, safetensors format)
     merged_model.save_pretrained(
         output_path,
         safe_serialization=True,
@@ -39,16 +39,16 @@ def merge_lora_with_motion_tokens(
         nb_code: int,
         output_path: str):
     """
-    不改 base_model_path 里的文件：
-    1) 重新加载原始模型与 tokenizer
-    2) 临时扩 vocab（pad + motion token）
-    3) merge LoRA → 保存到 output_path
+    Do not modify files in base_model_path:
+    1) Reload original model & tokenizer
+    2) Temporarily expand vocab (pad + motion token)
+    3) Merge LoRA -> Save to output_path
     """
-    # 1️⃣ 基座 tokenizer / model
+    # 1️⃣ Base tokenizer / model
     tokenizer = AutoTokenizer.from_pretrained(base_model_path)
     model     = AutoModelForCausalLM.from_pretrained(base_model_path)
 
-    # 2️⃣ pad_token（若缺）
+    # 2️⃣ pad_token (if missing)
     if tokenizer.pad_token_id is None:
         tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
 
@@ -57,11 +57,11 @@ def merge_lora_with_motion_tokens(
     tokenizer.add_tokens(motion_tokens)
     model.resize_token_embeddings(len(tokenizer))
 
-    # 4️⃣ 载入 LoRA，合并
+    # 4️⃣ Load LoRA, merge
     peft_model = PeftModel.from_pretrained(model, lora_path)
-    merged     = peft_model.merge_and_unload()   # → 普通 HF 模型
+    merged     = peft_model.merge_and_unload()   # -> Standard HF model
 
-    # 5️⃣ 保存到全新目录
+    # 5️⃣ Save to new directory
     merged.save_pretrained(output_path, safe_serialization=True, max_shard_size="4GB")
     tokenizer.save_pretrained(output_path)
     print(f"✅ Full model saved to {output_path}")

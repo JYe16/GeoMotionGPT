@@ -21,7 +21,7 @@ class Motion2TextDatasetTokenCustom(data.Dataset):
         tmpFile=True,
         tiny=False,
         debug=False,
-        code_path="motion_tokens", # 默认 token 文件夹名
+        code_path="motion_tokens", # Default token folder name
         w_vectorizer=None,
         **kwargs,
     ):
@@ -33,13 +33,13 @@ class Motion2TextDatasetTokenCustom(data.Dataset):
         self.std = std
         self.split = split
         
-        # 路径设置
+        # Path settings
         split_file = pjoin(data_root, split + '.txt')
         self.text_dir = pjoin(data_root, 'texts')
         self.motion_dir = pjoin(data_root, 'new_joint_vecs')
         
-        # 处理 Token 路径
-        # 如果配置中传入了 code_path，使用配置的；否则默认 'motion_tokens'
+        # Process Token path
+        # If code_path is passed in config, use it; otherwise default to 'motion_tokens'
         actual_code_path = kwargs.get('code_path', code_path)
         if actual_code_path is None:
             actual_code_path = "motion_tokens"
@@ -51,7 +51,7 @@ class Motion2TextDatasetTokenCustom(data.Dataset):
 
         print(f"[CustomDataset] Loading tokens from: {self.motion_token_dir}")
 
-        # 加载 Split 文件
+        # Load Split file
         self.id_list = []
         if os.path.exists(split_file):
             with cs.open(split_file, "r") as f:
@@ -60,36 +60,36 @@ class Motion2TextDatasetTokenCustom(data.Dataset):
         else:
             print(f"[Error] Split file not found: {split_file}")
 
-        # 数据过滤与加载逻辑
+        # Data filtering and loading logic
         new_name_list = []
         data_dict = {}
         
         print(f"Loading {split} dataset...")
         for name in tqdm(self.id_list):
             try:
-                # 1. 检查 Token 文件
+                # 1. Check Token file
                 token_file = pjoin(self.motion_token_dir, name + '.npy')
                 if not os.path.exists(token_file):
                     continue
                 
-                # 2. 加载 tokens
+                # 2. Load tokens
                 tokens = np.load(token_file)
                 if len(tokens.shape) > 1:
                     tokens = tokens.flatten()
                 
-                # 3. 基于 MOTION 帧数过滤 (不是 token 长度!)
-                # 需要加载 motion 文件来获取真实帧数
+                # 3. Filter based on MOTION frame count (not token length!)
+                # Need to load motion file to get actual frame count
                 motion_file = pjoin(self.motion_dir, name + '.npy')
                 if not os.path.exists(motion_file):
                     continue
                 motion = np.load(motion_file)
                 motion_length = len(motion)
                 
-                # 标准过滤: min=40, max<200 for HumanML3D evaluation
+                # Standard filtering: min=40, max<200 for HumanML3D evaluation
                 if motion_length < self.min_motion_length or motion_length >= self.max_motion_length:
                     continue
 
-                # 4. 加载文本
+                # 4. Load text
                 text_path = pjoin(self.text_dir, name + '.txt')
                 if not os.path.exists(text_path):
                     continue

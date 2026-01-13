@@ -251,8 +251,8 @@ class MoTGPT2LMHeadModel(GPT2LMHeadModel):
                 #  streamer: Optional["BaseStreamer"] = None,
                 #  negative_prompt_ids: Optional[torch.Tensor] = None,
                 #  negative_prompt_attention_mask: Optional[torch.Tensor] = None,
-                 mode:Union[str, List[str]] = 'text', # 默认生成文本
-                #  mode:Union[int, List[int]] = 0, # 默认生成文本
+                 mode:Union[str, List[str]] = 'text', # Generate text by default
+                #  mode:Union[int, List[int]] = 0, # Generate text by default
                  **kwargs,
                 #  type_ids=type_ids1, position_ids=position_ids, do_sample=True, use_cache=False, max_new_tokens=40
                  ):

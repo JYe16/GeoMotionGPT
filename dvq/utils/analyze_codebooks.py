@@ -1,5 +1,5 @@
 # analyze_single_codebook.py
-# 用法示例：
+# Usage example:
 #   python analyze_single_codebook.py \
 #       --file /mnt/data/code_counts_gsst.csv \
 #       --name "GSST-1024" \
@@ -14,7 +14,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 def analyze_codebook(df: pd.DataFrame, name: str):
-    """计算单份 codebook 的健康度指标。df 需包含列: 'count'（'code_id' 可选）。"""
+    """Calculate health metrics for a single codebook. df must contain column: 'count' ('code_id' optional)."""
     if "count" not in df.columns:
         raise ValueError("Input dataframe must contain a 'count' column.")
     counts = df["count"].astype(float).values
@@ -22,18 +22,18 @@ def analyze_codebook(df: pd.DataFrame, name: str):
     total = counts.sum()
     probs = counts / (total + 1e-12)
 
-    # 信息熵 / 困惑度
+    # Entropy / Perplexity
     entropy = -np.sum(probs * np.log(probs + 1e-12))
     perplexity = float(np.exp(entropy))
 
-    # 利用率与活跃度
+    # Utilization and Activity
     utilization_ratio = float(np.mean(counts > 0))
     mean_count = counts.mean()
     active_25 = float(np.mean(counts > 0.25 * mean_count))
     active_50 = float(np.mean(counts > 0.50 * mean_count))
     active_100 = float(np.mean(counts > 1.00 * mean_count))
 
-    # Gini 系数（不均衡度）
+    # Gini Coefficient (Imbalance)
     sorted_counts = np.sort(counts)
     n = len(sorted_counts)
     gini = (2 * np.sum((np.arange(1, n + 1) * sorted_counts))) / (n * sorted_counts.sum() + 1e-12) - (n + 1) / n

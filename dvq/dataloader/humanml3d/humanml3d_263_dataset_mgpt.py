@@ -17,7 +17,7 @@ class HumanML3DDataset(data.Dataset):
         self.unit_length = unit_length
         self.data_root = data_root
 
-        # 定义我们数据集的特定参数
+        # Define specific parameters for our dataset
         self.motion_dir = pjoin(self.data_root, 'new_joint_vecs')
         self.text_dir = pjoin(self.data_root, 'texts')
         self.joints_num = 22
@@ -52,7 +52,7 @@ class HumanML3DDataset(data.Dataset):
                 if (len(motion)) < self.min_motion_length or (len(motion) < self.window_size) or (len(motion) >= self.max_motion_length):
                     continue
 
-                # 将所有动作数据预先加载到内存中
+                # Preload all motion data into memory
                 self.data.append(motion)
                 self.lengths.append(motion.shape[0] - self.window_size)
                 new_name_list.append(name)
@@ -63,7 +63,7 @@ class HumanML3DDataset(data.Dataset):
         self.mean = torch.from_numpy(mean).float()
         self.std = torch.from_numpy(std).float()
 
-        # 检查特征维度是否匹配
+        # Check if feature dimensions match
         if self.mean.shape[0] != self.features_dim or self.std.shape[0] != self.features_dim:
             raise ValueError(
                 f"Dimension Mismatch - Real: ({self.mean.shape[0]}), Expected: ({self.features_dim})")
@@ -71,7 +71,7 @@ class HumanML3DDataset(data.Dataset):
         print(f"Successfully loaded {split} dataset with total {len(self.data)} clips")
 
     def inv_transform(self, data):
-        """将标准化的数据逆转换为原始尺度"""
+        """Inverse transform normalized data to original scale"""
         if not isinstance(data, torch.Tensor):
             data = torch.from_numpy(data)
         return data * self.std + self.mean
@@ -82,7 +82,7 @@ class HumanML3DDataset(data.Dataset):
     def __getitem__(self, item):
         motion = self.data[item]
 
-        # 从完整动作中随机截取一个窗口
+        # Randomly crop a window from the full motion
         if len(motion) - self.window_size > 0:
             idx = random.randint(0, len(motion) - self.window_size)
             motion_window = motion[idx: idx + self.window_size]
@@ -90,10 +90,10 @@ class HumanML3DDataset(data.Dataset):
             # Handle cases where filtered motion might be smaller than window_size (though init filters them)
             motion_window = motion[:self.window_size] 
 
-        # 转换为Torch Tensor
+        # Convert to Torch Tensor
         motion_tensor = torch.from_numpy(motion_window).float()
 
-        # Z-Score Normalization (标准化)
+        # Z-Score Normalization
         motion_normalized = (motion_tensor - self.mean) / self.std
 
         return motion_normalized

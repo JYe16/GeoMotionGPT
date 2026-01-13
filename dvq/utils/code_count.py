@@ -11,17 +11,17 @@ def count_codes(data_path, nb_code=512, out_path="/data/jackieye/code_counts.csv
         if not fname.endswith(".npy"):
             continue
         fpath = os.path.join(data_path, fname)
-        codes = np.load(fpath)          # 直接读
-        codes = codes.ravel()           # 展平
+        codes = np.load(fpath)          # Read directly
+        codes = codes.ravel()           # Flatten
         counts += np.bincount(codes, minlength=nb_code)
     total = counts.sum()
 
-    # 打印前20个出现最多的token
+    # Print the top 20 most frequent tokens
     idx = np.argsort(-counts)[:topk]
     for i in idx:
         print(f"code {i}: {counts[i]} ({counts[i] / total:.2%})")
 
-    # 保存到CSV
+    # Save to CSV
     np.savetxt(out_path,
                np.column_stack([np.arange(nb_code), counts]),
                fmt="%d",

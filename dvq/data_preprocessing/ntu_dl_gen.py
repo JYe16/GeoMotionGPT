@@ -50,7 +50,7 @@ def gendata(data_path, out_path, benchmark):
 
 def process_and_save(args):
     filename, data_path, save_path = args
-    # 自动创建目标文件夹
+    # Automatically create target folder
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     video_data = process_video_llava(os.path.join(data_path, filename))
     np.save(save_path, video_data)
