@@ -4,6 +4,7 @@
 
 [![arXiv](https://img.shields.io/badge/arXiv-2601.07632-b31b1b.svg)](https://arxiv.org/abs/2601.07632)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-GeoMotionGPT-yellow)](https://huggingface.co/zy22b/GeoMotionGPT)
 
 ![Teaser](assets/overall-v7.png)
 

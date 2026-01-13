@@ -211,3 +211,4 @@ checkpoints/
 datasets/
 experiments/
 results/
+huggingface_export/
