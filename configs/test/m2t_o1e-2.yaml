@@ -1,0 +1,96 @@
+# M2T Training with Orthogonality Regularization
+# This config uses MotGPTOrtho model to encourage orthogonal motion token embeddings
+# Key feature: Initialize motion token embeddings from VQ-VAE codebook via sparse projection
+
+NAME: GPT2_M2T_Ortho1e-2-alt
+ACCELERATOR: 'gpu'
+DEVICE: [0]
+NUM_NODES: 1
+
+# Path to VQ-VAE codebook for motion token embedding initialization
+CODEBOOK_PATH: checkpoints/dvq-gsst.pt
+
+# =====================================================
+# LoRA Configuration for Parameter-Efficient Training
+# =====================================================
+LORA:
+  ENABLED: false
+  r: 8                      # LoRA rank (lower = fewer params, typical: 4-16)
+  lora_alpha: 16           # LoRA scaling factor (typical: 2x rank)
+  lora_dropout: 0.05        # Dropout for LoRA layers
+  # train_embeddings options:
+  #   - 'motion_only': Only train motion token embeddings (indices 50257+), most efficient
+  #   - 'all': Train entire embedding layer (wte + lm_head)
+  #   - false: Don't train any embeddings, only LoRA params
+  train_embeddings: 'motion_only'
+  # Target modules for GPT2: c_attn (QKV attention), c_proj (output projection)
+  target_modules:
+    - c_attn
+    - c_proj
+
+TEST:
+  CHECKPOINTS: 'checkpoints/gpt2_m2t_ortho_ablations/gpt2-o1e-2-alt.ckpt'
+  SPLIT: test
+  BATCH_SIZE: 64
+  REPLICATIONS: 1
+
+TRAIN:
+  STAGE: token_custom
+  instruction_type: m2t
+  BATCH_SIZE: 20
+  END_EPOCH: 100
+  LR_SCHEDULER:
+    target: CosineAnnealingLR
+    params:
+      T_max: 200
+      eta_min: 1e-6
+  OPTIM:
+    target: AdamW
+    params:
+      lr: 1e-4
+      weight_decay: 0.01
+
+DATASET:
+  target: motGPT.data.HumanML3D_custom.HumanML3DDataModuleCustom
+  CODE_PATH: motion_tokens_1cb
+  HUMANML3D:
+    ROOT: /home/jackieye/code/llm-sensing/data/humanml3d_263/
+    FPS: 20
+    MIN_MOTION_LEN: 20 
+    MAX_MOTION_LEN: 200 
+
+model:
+  target: motGPT.models.geomotiongpt.GeoMotionGPT
+  diff_loss: null
+  params:
+    condition: 'motion'
+    task: 'm2t'
+    lambda_ortho: 1e-2
+    lm:
+      target: motGPT.archs.mgpt_lm.MLM
+      params:
+        model_type: gpt2
+        model_path: deps/gpt2
+        stage: ${TRAIN.STAGE}
+        ablation: ${ABLATION}
+        motion_codebook_size: 512
+        vocab_size: 512
+    motion_vae:
+      target: motGPT.archs.mld_vae.MldVae
+      params:
+        code_num: 512
+        code_dim: 512
+        nfeats: ${DATASET.NFEATS}
+        ablation: ${ABLATION}
+        datatype: ${DATASET.target}
+
+LOSS:
+  LAMBDA_CLS: 1.0
+
+METRIC:
+  TASK: 'm2t'
+  TYPE: ['M2TMetrics']
+
+LOGGER:
+  TYPE: ['tensorboard']
+  VAL_EVERY_STEPS: 1
