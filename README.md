@@ -5,6 +5,8 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2601.07632-b31b1b.svg)](https://arxiv.org/abs/2601.07632)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+![Teaser](assets/overall-v7.png)
+
 ## 🔗 Resources
 
 - **Checkpoints:** [Download from SharePoint](https://fsu-my.sharepoint.com/:f:/g/personal/zy22b_fsu_edu/IgDx9QAD6u6PQKwZUMiNmV0zAavwneNHLTuNJDNfwlubH8A?e=yymbpA)
