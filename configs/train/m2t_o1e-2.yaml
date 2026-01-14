@@ -37,7 +37,7 @@ TEST:
 TRAIN:
   STAGE: token_custom
   instruction_type: m2t
-  BATCH_SIZE: 20
+  BATCH_SIZE: 320
   END_EPOCH: 100
   LR_SCHEDULER:
     target: CosineAnnealingLR

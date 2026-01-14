@@ -145,7 +145,7 @@ python llm_train.py --cfg configs/train/m2t_o1e-2.yaml
 |-----------|-------|
 | Model | GPT-2 (124M) |
 | Learning Rate | 1e-4 |
-| Batch Size | 20 |
+| Batch Size | 320 |
 | Epochs | 100 |
 | Motion Codebook Size | 512 |
 | Orthogonal Loss λ | 0.01 |
