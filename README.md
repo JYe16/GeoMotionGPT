@@ -16,7 +16,7 @@ Please place two check point files under checkpoints/ -->
 
 ## 🛠️ Setup
 
-### 🐍 Environment and Dependencies
+### Environment and Dependencies
 
 ```bash
 conda create -n gmgpt python=3.11
@@ -26,11 +26,17 @@ pip install -r requirements.txt
 After installing the dependencies, please run:
 ```bash
 python -m spacy download en_core_web_sm
+bash prepare/download_t2m_evaluators.sh
+bash prepare/prepare_gpt2.sh
 ```
 
-### 📂 Dataset
+
+
+### Dataset
 
 Please download and preprocess data directly from [HumanML3D](https://github.com/EricGuo5513/HumanML3D).
+
+After preprocessing data. Please place the dataset under datasets/humanml3d.
 
 To generate motion tokens using our pretrained DVQ, please run:
 
