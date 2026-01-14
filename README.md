@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🚀 GeoMotionGPT
+# GeoMotionGPT
 
 ### Geometry-Aligned Motion Understanding with Large Language Models
 
