@@ -58,7 +58,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/GeoMotionGPT.git
+git clone https://github.com/JYe16/GeoMotionGPT
 cd GeoMotionGPT
 
 # Create conda environment
