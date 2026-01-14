@@ -111,6 +111,9 @@ Download required dependencies:
 ```bash
 # Download T2M evaluators
 bash prepare/download_t2m_evaluators.sh
+
+# Download GPT-2 pretrained weights
+bash prepare/prepare_gpt2.sh
 ```
 
 Evaluate our pretrained model from HuggingFace with a single command:
@@ -128,15 +131,6 @@ This will:
 ---
 
 ## 🎓 Training
-
-### Prerequisites
-
-Download required dependencies:
-
-```bash
-# Download GPT-2 pretrained weights
-bash prepare/prepare_gpt2.sh
-```
 
 ### Train Motion-to-Text Model
 
