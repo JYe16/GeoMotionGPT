@@ -58,7 +58,8 @@ DATASET:
   target: motGPT.data.HumanML3D_custom.HumanML3DDataModuleCustom
   CODE_PATH: motion_tokens
   HUMANML3D:
-    ROOT: datasets/humanml3d/
+    ROOT: /data/jackieye/humanml3d/humanml3d/
+    SPLIT_ROOT: /data/jackieye/humanml3d/humanml3d/
     FPS: 20
     MIN_MOTION_LEN: 20 
     MAX_MOTION_LEN: 196 
