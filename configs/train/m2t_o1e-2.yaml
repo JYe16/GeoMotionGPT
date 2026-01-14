@@ -29,7 +29,7 @@ LORA:
     - c_proj
 
 TEST:
-  CHECKPOINTS: 'checkpoints/gpt2_m2t_ortho_ablations/gpt2-o1e-2-alt.ckpt'
+  CHECKPOINTS: null
   SPLIT: test
   BATCH_SIZE: 64
   REPLICATIONS: 1
@@ -52,7 +52,7 @@ TRAIN:
 
 DATASET:
   target: motGPT.data.HumanML3D_custom.HumanML3DDataModuleCustom
-  CODE_PATH: motion_tokens_1cb
+  CODE_PATH: motion_tokens
   HUMANML3D:
     ROOT: /home/jackieye/code/llm-sensing/data/humanml3d_263/
     FPS: 20

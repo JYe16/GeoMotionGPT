@@ -30,8 +30,6 @@ bash prepare/download_t2m_evaluators.sh
 bash prepare/prepare_gpt2.sh
 ```
 
-
-
 ### Dataset
 
 Please download and preprocess data directly from [HumanML3D](https://github.com/EricGuo5513/HumanML3D).
@@ -52,14 +50,14 @@ After tokenizing the HumanML3D dataset using our DVQ, please run:
 python test.py --cfg configs/test/m2t_o1e-2.yaml 
 ```
 
-This command will evaluate our pretrained GPT2 model.
+This command will evaluate our pretrained GPT2 model. The pretrained model can be downloaded through huggingface.
 
 ## 🖊️ Citation
 
 If you find our work useful for your research, please consider citing:
 
 ```bibtex
-@misc{ye2026geomotiongptgeometryalignedmotionunderstanding,
+@misc{ye2026geomotiongpt,
       title={GeoMotionGPT: Geometry-Aligned Motion Understanding with Large Language Models}, 
       author={Zhankai Ye and Bofan Li and Yukai Jin and Shuoqiu Li and Wei Wang and Yanfu Zhang and Shangqian Gao and Xin Liu},
       year={2026},

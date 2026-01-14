@@ -52,7 +52,7 @@ TRAIN:
 
 DATASET:
   target: motGPT.data.HumanML3D_custom.HumanML3DDataModuleCustom
-  CODE_PATH: motion_tokens_1cb
+  CODE_PATH: motion_tokens
   HUMANML3D:
     ROOT: datasets/humanml3d/
     FPS: 20
