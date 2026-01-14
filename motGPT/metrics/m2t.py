@@ -358,7 +358,8 @@ class M2TMetrics(Metric):
                                       rescale_with_baseline=True,
                                       idf=True,
                                       device=self.device,
-                                      verbose=False)
+                                      verbose=False,
+                                      nthreads=1)  # Disable multiprocessing to avoid SIGTERM
                 metrics["Bert_F1"] = F1.mean().to(self.device)
             except Exception as e:
                 print(f"Warning: BERTScore computation failed: {e}")

@@ -98,8 +98,10 @@ class BASEDataModule(pl.LightningDataModule):
             "batch_size"] = 1 if self.is_mm else self.cfg.TEST.BATCH_SIZE
         dataloader_options["num_workers"] = self.cfg.TEST.NUM_WORKERS
         dataloader_options["shuffle"] = False
+        # persistent_workers requires num_workers > 0
+        persistent = self.cfg.TEST.NUM_WORKERS > 0
         return DataLoader(
             self.test_dataset,
-            persistent_workers=True,
+            persistent_workers=persistent,
             **dataloader_options,
         )

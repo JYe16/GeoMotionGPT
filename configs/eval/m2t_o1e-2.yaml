@@ -33,6 +33,7 @@ TEST:
   SPLIT: test
   BATCH_SIZE: 64
   REPLICATIONS: 1
+  NUM_WORKERS: 0  # Set to 0 to avoid multiprocessing conflict with BERTScore
 
 TRAIN:
   STAGE: token_custom
@@ -49,6 +50,9 @@ TRAIN:
     params:
       lr: 1e-4
       weight_decay: 0.01
+
+# Dataset name for output folder naming
+DATASET_NAME: humanml3d
 
 DATASET:
   target: motGPT.data.HumanML3D_custom.HumanML3DDataModuleCustom
