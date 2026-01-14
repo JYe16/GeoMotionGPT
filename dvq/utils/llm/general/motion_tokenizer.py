@@ -58,10 +58,9 @@ class MotionTokenizer:
             tokens_tensor = self.model.encode(motion_batch)
 
         # 4. Remove batch dimension and convert back to NumPy array
-        for i in range(len(tokens_tensor)):
-            tokens_tensor[i] = tokens_tensor[i].squeeze(0).cpu().numpy()
+        tokens = tokens_tensor.squeeze(0).cpu().numpy()
 
-        return np.array(tokens_tensor)
+        return tokens
 
     def __call__(self, motion_feature_vector: np.ndarray) -> np.ndarray:
         """Allow the tokenizer instance to be called directly"""

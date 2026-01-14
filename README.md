@@ -23,7 +23,6 @@
 - [Setup](#️-setup)
 - [Quick Start](#-quick-start)
 - [Training](#-training)
-- [Results](#-results)
 - [Citation](#️-citation)
 - [Acknowledgements](#-acknowledgements)
 
@@ -81,7 +80,7 @@ python -m spacy download en_core_web_sm
 
 3. **Generate motion tokens**: Tokenize the dataset using our pretrained DVQ:
    ```bash
-   python dvq/data_preprocessing/tokenize_dataset.py 
+   python dvq/data_preprocessing/tokenize_dataset_hf.py 
    ```
 
 <details>
