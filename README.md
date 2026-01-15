@@ -32,7 +32,7 @@
 
 **GeoMotionGPT** is a novel framework for motion-to-text generation that bridges the gap between human motion understanding and natural language generation. Our key contributions include:
 
-- 🎯 **Geometry-Aligned Tokenization**: A discrete variational quantizer (DVQ) that preserves geometric structure of motion data
+- 🎯 **Geometry-Aligned Tokenization**: A decoder-only vector quantizer (DVQ) that preserves geometric structure of motion data
 - 🔗 **Orthogonal Motion Embeddings**: Regularization technique ensuring motion tokens are well-separated in embedding space  
 - 🧠 **GPT-2 Fine-tuning**: Efficient adaptation of pretrained language models for motion captioning
 
