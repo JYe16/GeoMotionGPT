@@ -61,7 +61,10 @@ class WordVectorizer(object):
         return len(self.word2vec)
 
     def __getitem__(self, item):
-        word, pos = item.split('/')
+        if '/' in item:
+            word, pos = item.rsplit('/', 1)
+        else:
+            word, pos = item, 'OTHER'
         if word in self.word2vec:
             word_vec = self.word2vec[word]
             vip_pos = None

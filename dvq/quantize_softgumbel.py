@@ -21,7 +21,9 @@ class SoftGumbelQuantizer(nn.Module):
 
         # Codebook embedding layer
         self.codebook = nn.Embedding(self.nb_code, self.code_dim)
-        nn.init.uniform_(self.codebook.weight, -1.0 / self.nb_code, 1.0 / self.nb_code)
+        # Use standard embedding init (much larger than old ±1/K ≈ ±0.002)
+        # to prevent training collapse on smaller datasets
+        nn.init.normal_(self.codebook.weight, 0.0, 0.02)
 
         # Hyperparameters for training, will be updated from the main training script
         self.tau = 0.4

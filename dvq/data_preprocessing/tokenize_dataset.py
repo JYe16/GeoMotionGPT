@@ -52,29 +52,37 @@ def batch_tokenize(tokenizer: MotionTokenizer, motion_vec_dir: str, token_dir: s
             # print(f"An error occurred while processing {filename}: {e}")
 
 
-def tokenize(data_root, vec_size, down_t, vqvae_checkpoint, quantizer, nb_code):
+def tokenize(data_root, vec_size, down_t=3, vqvae_checkpoint=None, quantizer='gsst',
+             nb_code=512, model=None, output_path=None):
     """
-    Main execution function
+    Main execution function.
+
+    If *model* (a VQVAE_148 instance already on device) is provided,
+    it is used directly and vqvae_checkpoint / quantizer / nb_code are ignored.
+    If *output_path* is provided it overrides the default <data_root>/motion_tokens.
     """
-    # 0. Load Model
     device = define_device()
-    model = VQVAE_148(quantizer=quantizer, nb_code=nb_code, vec_size=vec_size, down_t=down_t)
-    checkpoint = torch.load(vqvae_checkpoint, map_location='cpu')
-    
-    # Handle state_dict keys mismatch (remove 'vqvae.' prefix if present)
-    new_state_dict = {}
-    for k, v in checkpoint.items():
-        if k.startswith('vqvae.'):
-            new_state_dict[k.replace('vqvae.', '')] = v
-        else:
-            new_state_dict[k] = v
-            
-    model.load_state_dict(new_state_dict)
-    model.to(device)
+
+    if model is None:
+        # Load from checkpoint
+        model = VQVAE_148(quantizer=quantizer, nb_code=nb_code, vec_size=vec_size, down_t=down_t)
+        checkpoint = torch.load(vqvae_checkpoint, map_location='cpu')
+
+        # Handle state_dict keys mismatch (remove 'vqvae.' prefix if present)
+        new_state_dict = {}
+        for k, v in checkpoint.items():
+            if k.startswith('vqvae.'):
+                new_state_dict[k.replace('vqvae.', '')] = v
+            else:
+                new_state_dict[k] = v
+
+        model.load_state_dict(new_state_dict)
+        model.to(device)
     model.eval()
 
-    output_path = os.path.join(data_root, 'motion_tokens')
-    
+    if output_path is None:
+        output_path = os.path.join(data_root, 'motion_tokens')
+
     # 1. Initialize the tokenizer
     # We only need to initialize it once and then reuse it for all files for efficiency.
     tokenizer = MotionTokenizer(model, data_root, vqvae_checkpoint)

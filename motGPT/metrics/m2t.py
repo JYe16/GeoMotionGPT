@@ -219,6 +219,16 @@ class M2TMetrics(Metric):
 
         return original_text_embeddings
 
+    def _select_primary_reference(self, gt_item):
+        if isinstance(gt_item, (list, tuple)):
+            for ref in gt_item:
+                if isinstance(ref, str) and ref.strip():
+                    return ref
+            return ""
+        if isinstance(gt_item, str):
+            return gt_item
+        return str(gt_item)
+
     @torch.no_grad()
     def compute(self, sanity_flag):
         count = self.count.item()
@@ -342,14 +352,20 @@ class M2TMetrics(Metric):
             metrics["ROUGE_L"] = torch.tensor(0.0, device=self.device)
             metrics["CIDEr"] = torch.tensor(0.0, device=self.device)
 
-        # Bert metrics - use GPU for faster computation
-        # Skip BERTScore during training to avoid slowdown and potential hangs
-        skip_bert_score = os.environ.get('SKIP_BERT_SCORE', '0') == '1'
+        # Bert metrics
+        # Allow skipping via env or config to avoid long stalls / OOM during eval.
+        skip_bert_score_cfg = bool(getattr(self.cfg.METRIC, 'SKIP_BERT_SCORE', False))
+        skip_bert_score_env = os.environ.get('SKIP_BERT_SCORE', '0') == '1'
+        skip_bert_score = skip_bert_score_cfg or skip_bert_score_env
         if skip_bert_score:
             print("Skipping BERTScore computation (SKIP_BERT_SCORE=1)")
             metrics["Bert_F1"] = torch.tensor(0.0, device=self.device)
         else:
             try:
+                bert_device = str(getattr(self.cfg.METRIC, 'BERT_DEVICE', 'cpu'))
+                if bert_device == 'auto':
+                    bert_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
                 # Limit samples to avoid very long computation times
                 max_samples = min(len(self.pred_texts), 500)
                 P, R, F1 = score_bert(self.pred_texts[:max_samples],
@@ -357,7 +373,7 @@ class M2TMetrics(Metric):
                                       lang='en',
                                       rescale_with_baseline=True,
                                       idf=True,
-                                      device=self.device,
+                                      device=bert_device,
                                       verbose=False,
                                       nthreads=1)  # Disable multiprocessing to avoid SIGTERM
                 metrics["Bert_F1"] = F1.mean().to(self.device)
@@ -390,15 +406,16 @@ class M2TMetrics(Metric):
         predtext_embeddings = torch.flatten(predtext_emb, start_dim=1).detach()
         self.predtext_embeddings.append(predtext_embeddings)
 
-        if word_embs is not None:
-            gtmotion_embeddings = self.get_motion_embeddings(feats_ref, lengths)
-            self.gtmotion_embeddings.append(gtmotion_embeddings)
+        # Always compute motion embeddings for retrieval metrics
+        gtmotion_embeddings = self.get_motion_embeddings(feats_ref, lengths)
+        self.gtmotion_embeddings.append(gtmotion_embeddings)
 
-            # text encoder (no sorting needed)
-            gttext_emb = self.t2m_textencoder(word_embs, pos_ohot,
-                                              text_lengths)
-            gttext_embeddings = torch.flatten(gttext_emb, start_dim=1).detach()
-            self.gttext_embeddings.append(gttext_embeddings)
+        # Use the same text processing pipeline for GT and prediction retrieval embeddings.
+        # This avoids mismatch between tokenizer pipelines and makes gt/pred R-precision comparable.
+        gt_primary_texts = [self._select_primary_reference(item) for item in gt_texts]
+        gttext_emb = self._get_text_embeddings(gt_primary_texts)
+        gttext_embeddings = torch.flatten(gttext_emb, start_dim=1).detach()
+        self.gttext_embeddings.append(gttext_embeddings)
 
         self.pred_texts.extend(pred_texts)
         self.gt_texts.extend(gt_texts)

@@ -31,6 +31,7 @@ class Motion2TextDatasetTokenCustom(data.Dataset):
         self.unit_length = unit_length
         self.mean = mean
         self.std = std
+        self.nfeats = int(self.mean.shape[0])
         self.split = split
         
         # Path settings

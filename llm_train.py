@@ -89,6 +89,71 @@ def load_vqvae_codebook(codebook_path: str, logger=None) -> torch.Tensor:
     return codebook_weight
 
 
+def infer_dataset_name(cfg) -> str:
+    """
+    Infer dataset name from config.
+
+    Priority:
+    1) cfg.DATASET_NAME (if provided)
+    2) cfg.DATASET.target (contains "kit" / "humanml")
+    3) cfg.DATASET.HUMANML3D.ROOT path hint
+    """
+    dataset_name = str(cfg.get('DATASET_NAME', '')).strip().lower()
+    if dataset_name:
+        return dataset_name
+
+    dataset_target = str(cfg.DATASET.get('target', '')).lower() if 'DATASET' in cfg else ''
+    if 'kit' in dataset_target:
+        return 'kit'
+    if 'humanml' in dataset_target or 'humanml3d' in dataset_target:
+        return 'humanml3d'
+
+    try:
+        data_root = str(cfg.DATASET.HUMANML3D.ROOT).lower()
+        if 'kit' in data_root:
+            return 'kit'
+        if 'humanml' in data_root or 'humanml3d' in data_root:
+            return 'humanml3d'
+    except Exception:
+        pass
+
+    return 'humanml3d'
+
+
+def resolve_codebook_path(cfg, logger=None) -> str:
+    """
+    Resolve VQ-VAE codebook checkpoint path.
+
+    New naming convention (preferred):
+        checkpoints/<dataset>-dvq-<quantizer>.pt
+    """
+    configured_path = str(cfg.get('CODEBOOK_PATH', '')).strip()
+    dataset_name = infer_dataset_name(cfg)
+    quantizer_name = str(cfg.get('DVQ_QUANTIZER', 'gsst')).strip()
+
+    preferred_path = os.path.join('checkpoints', f'{dataset_name}-dvq-{quantizer_name}.pt')
+
+    if configured_path and os.path.exists(configured_path):
+        if logger:
+            logger.info(f"Using configured CODEBOOK_PATH: {configured_path}")
+        return configured_path
+
+    if os.path.exists(preferred_path):
+        if logger:
+            logger.info(f"Using dataset-aware codebook path: {preferred_path}")
+        return preferred_path
+
+    legacy_path = os.path.join('checkpoints', 'dvq-gsst.pt')
+    if os.path.exists(legacy_path):
+        if logger:
+            logger.warning(
+                f"Preferred codebook not found ({preferred_path}); fallback to legacy path: {legacy_path}"
+            )
+        return legacy_path
+
+    return configured_path or preferred_path
+
+
 def create_sparse_projection(input_dim: int, output_dim: int, sparsity: float = 0.9, 
                              seed: int = 42) -> torch.Tensor:
     """
@@ -634,7 +699,10 @@ def main():
     # NEW: Initialize motion token embeddings from VQ-VAE codebook
     # =====================================================
     codebook_init_enabled = cfg.get('CODEBOOK_INIT_ENABLED', True)  # Default: enabled
-    codebook_path = cfg.get('CODEBOOK_PATH', 'checkpoints/codebook_st_share.pt')
+    dataset_name = infer_dataset_name(cfg)
+    codebook_path = resolve_codebook_path(cfg, logger)
+
+    logger.info(f"Detected dataset: {dataset_name}")
     
     # Determine model type and original vocab size
     model_type = cfg.model.params.lm.params.get('model_type', 'gpt2')
@@ -670,6 +738,7 @@ def main():
             logger.warning("Continuing with random initialization...")
     else:
         logger.warning(f"Codebook file not found at: {codebook_path}")
+        logger.warning(f"Expected new naming: checkpoints/{dataset_name}-dvq-<quantizer>.pt")
         logger.warning("Using default random initialization for motion token embeddings")
 
     # =====================================================

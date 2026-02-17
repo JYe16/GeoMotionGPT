@@ -20,14 +20,17 @@ class HumanML3DDataModule(BASEDataModule):
         self.save_hyperparameters(logger=False)
         
         # Basic info of the dataset
-        cfg.DATASET.JOINT_TYPE = 'humanml3d'
-        self.name = "humanml3d"
-        self.njoints = 22
+        data_root = cfg.DATASET.HUMANML3D.ROOT
+        dataset_name = str(getattr(cfg, 'DATASET_NAME', '')).lower()
+        is_kit = ('kit' in dataset_name) or ('kit' in str(data_root).lower())
+
+        cfg.DATASET.JOINT_TYPE = 'kit' if is_kit else 'humanml3d'
+        self.name = "kit" if is_kit else "humanml3d"
+        self.njoints = 21 if is_kit else 22
         self.fps = cfg.DATASET.HUMANML3D.FPS
         self.hparams.fps = cfg.DATASET.HUMANML3D.FPS
         
         # Path to the dataset
-        data_root = cfg.DATASET.HUMANML3D.ROOT
         self.hparams.data_root = data_root
         self.hparams.text_dir = pjoin(data_root, "texts")
         self.hparams.motion_dir = pjoin(data_root, 'new_joint_vecs')
@@ -51,6 +54,12 @@ class HumanML3DDataModule(BASEDataModule):
             dis_data_root_eval = pjoin(cfg.DATASET.HUMANML3D.MEAN_STD_PATH, 't2m', "Comp_v6_KLD01", "meta")
             self.hparams.mean_eval = np.load(pjoin(dis_data_root_eval, "mean.npy"))
             self.hparams.std_eval = np.load(pjoin(dis_data_root_eval, "std.npy"))
+
+        # KIT is 251-dim while default HumanML evaluator stats are 263-dim.
+        # If dimensions mismatch, fall back to dataset-native stats to avoid runtime shape errors.
+        if self.hparams.mean_eval.shape[0] != self.hparams.mean.shape[0]:
+            self.hparams.mean_eval = self.hparams.mean.copy()
+            self.hparams.std_eval = self.hparams.std.copy()
         # self.hparams.mean_eval = np.load(pjoin(data_root, "Mean.npy"))
         # self.hparams.std_eval = np.load(pjoin(data_root, "Std.npy"))
         
@@ -130,6 +139,9 @@ class HumanML3DDataModule(BASEDataModule):
         ori_std = torch.tensor(self.hparams.std).to(features)
         eval_mean = torch.tensor(self.hparams.mean_eval).to(features)
         eval_std = torch.tensor(self.hparams.std_eval).to(features)
+        if eval_mean.shape[-1] != ori_mean.shape[-1] or eval_mean.shape[-1] != features.shape[-1]:
+            eval_mean = ori_mean
+            eval_std = ori_std
         features = features * ori_std + ori_mean
         features = (features - eval_mean) / eval_std
         return features
@@ -140,6 +152,9 @@ class HumanML3DDataModule(BASEDataModule):
         ori_std = torch.tensor(self.hparams.std).to(features)
         eval_mean = torch.tensor(self.hparams.mean_eval).to(features)
         eval_std = torch.tensor(self.hparams.std_eval).to(features)
+        if eval_mean.shape[-1] != ori_mean.shape[-1] or eval_mean.shape[-1] != features.shape[-1]:
+            eval_mean = ori_mean
+            eval_std = ori_std
         features = features * eval_std + eval_mean
         features = (features - ori_mean) / ori_std
         return features

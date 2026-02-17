@@ -36,7 +36,14 @@ from transformers import get_cosine_schedule_with_warmup
 from dvq.softvq import HumanVQVAE
 # Use the previously written data loader adapted for SMPL data
 from dvq.dataloader.humanml3d.humanml3d_263_dataset_mgpt import HumanML3DDataset
+from dvq.dataloader.kit.kit_dataset import KITDataset
 from dvq.utils.define_num_workers import define_num_workers
+
+# Dataset configurations: name -> (default data_root, feature_dim)
+DATASET_CONFIGS = {
+    "humanml3d": {"data_root": "datasets/humanml3d/", "vec_size": 263},
+    "kit":       {"data_root": "/data/jackieye/KIT-ML/",       "vec_size": 251},
+}
 
 
 def calculate_loss_ortho(model):
@@ -55,7 +62,11 @@ def set_quantizer_requires_grad(flag: bool, quantizer_params):
 def main():
     # --- 1. Argument Parsing ---
     parser = argparse.ArgumentParser(description="VQ-VAE Model Training Script")
-    parser.add_argument('--data_root', type=str, default="datasets/humanml3d/")
+    parser.add_argument('--dataset', type=str, default='humanml3d',
+                        choices=list(DATASET_CONFIGS.keys()),
+                        help='Dataset to use: humanml3d (263-dim) or kit (251-dim KIT-ML MMM)')
+    parser.add_argument('--data_root', type=str, default=None,
+                        help='Data root (default: auto from --dataset)')
     parser.add_argument('--num_epochs', type=int, default=500)
     parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--lr', type=float, default=2e-4)
@@ -69,10 +80,16 @@ def main():
 
     args = parser.parse_args()
 
+    # --- Resolve dataset config ---
+    ds_cfg = DATASET_CONFIGS[args.dataset]
+    if args.data_root is None:
+        args.data_root = ds_cfg["data_root"]
+    vec_size = ds_cfg["vec_size"]
+
     # --- 2. Setup ---
     # Create save directory
     now = datetime.now()
-    working_dir = os.path.join('experiments', 'dvq',str(now.strftime("%m%d%Y") + '-' + args.quantizer + '-r' + str(args.ratio)) + '-c' + str(
+    working_dir = os.path.join('experiments', 'dvq',str(now.strftime("%m%d%Y") + '-' + args.dataset + '-' + args.quantizer + '-r' + str(args.ratio)) + '-c' + str(
                                    args.nb_code))
     if os.path.exists(working_dir):
         shutil.rmtree(working_dir)
@@ -82,25 +99,35 @@ def main():
     device = define_device()
     save_to_log(f"Using device: {device}", working_dir=working_dir, print_msg=True)
     save_to_log(f"Codebook Size: {args.nb_code}", working_dir=working_dir, print_msg=True)
+    save_to_log(f"Dataset: {args.dataset}  (vec_size={vec_size}, data_root={args.data_root})",
+                working_dir=working_dir, print_msg=True)
 
     # --- 3. Data Loading ---
     save_to_log("Loading dataset...", working_dir=working_dir, print_msg=True)
-    # train_set = NTU60SklDataset(data_root=args.data_root, split="train", window_size=args.window_size)
-    train_set = HumanML3DDataset(data_root=args.data_root, split="train", window_size=args.window_size)
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers,
+
+    if args.dataset == "kit":
+        DatasetClass = KITDataset
+    else:
+        DatasetClass = HumanML3DDataset
+
+    train_set = DatasetClass(data_root=args.data_root, split="train", window_size=args.window_size)
+    effective_bs = min(args.batch_size, len(train_set))
+    save_to_log(f"Effective batch size: {effective_bs} (dataset has {len(train_set)} clips)",
+                working_dir=working_dir, print_msg=True)
+    train_loader = DataLoader(train_set, batch_size=effective_bs, shuffle=True, num_workers=args.num_workers,
                               pin_memory=True, drop_last=True)
 
-    # val_set = NTU60SklDataset(data_root=args.data_root, split="val", window_size=args.window_size)
-    val_set = HumanML3DDataset(data_root=args.data_root, split="val", window_size=args.window_size)
-    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
-                            pin_memory=True, drop_last=True)
+    val_set = DatasetClass(data_root=args.data_root, split="val", window_size=args.window_size)
+    val_bs = min(args.batch_size, len(val_set))
+    val_loader = DataLoader(val_set, batch_size=val_bs, shuffle=False, num_workers=args.num_workers,
+                            pin_memory=True, drop_last=False)
 
     # --- 4. Model & Optimizer Initialization ---
     # !!! IMPORTANT: Ensure parameters here match your VQVAE class definition
     # quantizer choices=['ema_reset', 'orig', 'ema', 'reset']
     model = HumanVQVAE(
         nb_code=args.nb_code,
-        vec_size=263,
+        vec_size=vec_size,
         quantizer=args.quantizer,
         down_t=3,
         ratio=args.ratio,
@@ -160,7 +187,7 @@ def main():
     best_epoch = -1
     best_state = None  # will hold a CPU copy of the best state_dict
     # Update tau scheduler
-    tau_start = 0.4
+    tau_start = 0.2
     tau_end = 0.01
 
     for epoch in range(args.num_epochs):
@@ -287,7 +314,7 @@ def main():
             # checkpoint_path = os.path.join(working_dir, f'vqvae_epoch_{epoch + 1}.pt')
             # torch.save(model.state_dict(), checkpoint_path)
             # save_to_log(f"Checkpoint saved to {checkpoint_path}", working_dir=working_dir, print_msg=True)
-            tokenize_test(data_root=args.data_root, vec_size=263, model=model,
+            tokenize_test(data_root=args.data_root, vec_size=vec_size, model=model.vqvae,
                           output_path=os.path.join(working_dir, 'motion_tokens_temp'))
             count_codes(data_path=os.path.join(working_dir, 'motion_tokens_temp'), nb_code=args.nb_code,
                         out_path=os.path.join(working_dir, f'code_counts_epoch_{epoch + 1}.csv'))
@@ -307,13 +334,13 @@ def main():
     save_to_log("Training complete!", working_dir=working_dir, print_msg=True)
     # --- Save only the best model found during training ---
     assert best_state is not None, "No best model captured; check training loop."
-    final_model_path = os.path.join('checkpoints/', f'dvq-gsst.pt')
+    final_model_path = os.path.join('checkpoints', f'{args.dataset}-dvq-{args.quantizer}.pt')
     torch.save(best_state, final_model_path)
     save_to_log(f"Best model (epoch {best_epoch}, val_total_loss={best_metric:.6f}) saved to {final_model_path}",
                 working_dir=working_dir, print_msg=True)
     # Use the best model to tokenize the dataset and count codes
     model.load_state_dict(best_state)
-    tokenize_test(data_root=args.data_root, vec_size=263, model=model,
+    tokenize_test(data_root=args.data_root, vec_size=vec_size, model=model.vqvae,
                   output_path=os.path.join(working_dir, 'motion_tokens'))
     count_codes(data_path=os.path.join(working_dir, 'motion_tokens'), nb_code=args.nb_code,
                 out_path=os.path.join(working_dir, f'code_counts_final.csv'))

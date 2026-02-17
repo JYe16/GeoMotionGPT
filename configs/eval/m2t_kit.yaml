@@ -1,0 +1,101 @@
+NAME: GPT2_M2T_KIT_Ortho1e-2
+ACCELERATOR: 'gpu'
+DEVICE: [0]
+NUM_NODES: 1
+
+CODEBOOK_INIT_ENABLED: true
+CODEBOOK_PATH: checkpoints/kit-dvq-gsst.pt
+DVQ_QUANTIZER: gsst
+
+LORA:
+  ENABLED: false
+  r: 8
+  lora_alpha: 16
+  lora_dropout: 0.05
+  train_embeddings: 'motion_only'
+  target_modules:
+    - c_attn
+    - c_proj
+
+TEST:
+  CHECKPOINTS: experiments/geomotiongpt/debug--GPT2_M2T_KIT_Ortho1e-2/checkpoints/last.ckpt
+  SPLIT: test
+  BATCH_SIZE: 64
+  NUM_WORKERS: 0
+  REPLICATION_TIMES: 1
+  REPLICATIONS: 1
+
+TRAIN:
+  STAGE: token_custom
+  instruction_type: m2t
+  BATCH_SIZE: 24
+  END_EPOCH: 200
+  LR_SCHEDULER:
+    target: CosineAnnealingLR
+    params:
+      T_max: 200
+      eta_min: 1e-6
+  OPTIM:
+    target: AdamW
+    params:
+      lr: 1e-4
+      weight_decay: 0.01
+
+DATASET_NAME: kit
+
+DATASET:
+  target: motGPT.data.HumanML3D_custom.HumanML3DDataModuleCustom
+  CODE_PATH: /data/jackieye/KIT-ML/motion_tokens
+  HUMANML3D:
+    ROOT: /data/jackieye/KIT-ML/
+    SPLIT_ROOT: /data/jackieye/KIT-ML/
+    FPS: 12.5
+    MIN_MOTION_LEN: 24
+    MAX_MOTION_LEN: 200
+
+model:
+  target: motGPT.models.geomotiongpt.GeoMotionGPT
+  diff_loss: null
+  params:
+    condition: 'motion'
+    task: 'm2t'
+    lambda_ortho: 1e-2
+    lm:
+      target: motGPT.archs.mgpt_lm.MLM
+      params:
+        model_type: gpt2
+        model_path: deps/gpt2
+        stage: ${TRAIN.STAGE}
+        ablation: ${ABLATION}
+        motion_codebook_size: 128
+        vocab_size: 128
+    motion_vae:
+      target: motGPT.archs.mld_vae.MldVae
+      params:
+        code_num: 128
+        code_dim: 512
+        nfeats: ${DATASET.NFEATS}
+        ablation: ${ABLATION}
+        datatype: ${DATASET.target}
+
+LOSS:
+  LAMBDA_CLS: 1.0
+
+METRIC:
+  TASK: 'm2t'
+  SKIP_BERT_SCORE: true
+  BERT_DEVICE: 'cpu'
+  TYPE: ['M2TMetrics']
+
+TM2T_COMPAT:
+  ENABLED: true
+  R_SIZE: 32
+  TOP_K: 3
+  MAX_TEXT_LEN: 20
+  UNIT_LEN: 4
+  APPLY_RENORM4T2M: true
+  COMPUTE_BERT_SCORE: false
+
+LOGGER:
+  TYPE: ['tensorboard']
+  VAL_EVERY_STEPS: 1
