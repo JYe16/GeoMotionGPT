@@ -55,6 +55,17 @@ def calculate_loss_ortho(model):
     return loss_ortho
 
 
+def calculate_loss_pairwise_cosine(model):
+    C = model.vqvae.quantizer.codebook.weight
+    C_norm = F.normalize(C, dim=-1)  # L2 normalization for each vector
+    G = C_norm @ C_norm.t()  # [K, K] cosine similarity matrix
+    eye_mask = torch.eye(G.size(0), device=G.device, dtype=torch.bool)
+    off_diag = G[~eye_mask]
+    # Minimize mean off-diagonal cosine similarity <=> maximize pairwise cosine distances.
+    loss_pairwise_cosine = off_diag.mean()
+    return loss_pairwise_cosine
+
+
 def set_quantizer_requires_grad(flag: bool, quantizer_params):
     for p in quantizer_params:
         p.requires_grad = flag
@@ -76,6 +87,9 @@ def main():
     parser.add_argument('--nb_code', type=int, default=512)
     parser.add_argument('--num_workers', type=int, default=define_num_workers())
     parser.add_argument('--quantizer', type=str, default="gsst")
+    parser.add_argument('--geo_loss_type', type=str, default='ortho',
+                        choices=['ortho', 'pairwise_cosine'],
+                        help='Geometric codebook loss type. Mutually exclusive: ortho or pairwise_cosine.')
 
 
     args = parser.parse_args()
@@ -101,6 +115,7 @@ def main():
     save_to_log(f"Codebook Size: {args.nb_code}", working_dir=working_dir, print_msg=True)
     save_to_log(f"Dataset: {args.dataset}  (vec_size={vec_size}, data_root={args.data_root})",
                 working_dir=working_dir, print_msg=True)
+    save_to_log(f"Geo loss type: {args.geo_loss_type}", working_dir=working_dir, print_msg=True)
 
     # --- 3. Data Loading ---
     save_to_log("Loading dataset...", working_dir=working_dir, print_msg=True)
@@ -187,7 +202,7 @@ def main():
     best_epoch = -1
     best_state = None  # will hold a CPU copy of the best state_dict
     # Update tau scheduler
-    tau_start = 0.2
+    tau_start = 0.4
     tau_end = 0.01
 
     for epoch in range(args.num_epochs):
@@ -197,7 +212,7 @@ def main():
         train_loss_rec = 0.0
         train_loss_util = 0.0
         train_loss_self_entropy = 0.0
-        train_loss_ortho = 0.0
+        train_loss_geo = 0.0
         train_util = 0.0
 
         # Update hard_ppl_rate
@@ -227,13 +242,16 @@ def main():
 
             # Reconstruction Loss
             loss_rec = F.mse_loss(x_hat, batch)
-            loss_ortho = calculate_loss_ortho(model)
+            if args.geo_loss_type == 'pairwise_cosine':
+                loss_geo = calculate_loss_pairwise_cosine(model)
+            else:
+                loss_geo = calculate_loss_ortho(model)
 
             # Instead of ramping up to 1.0, let's keep it at a smaller, constant value
             # after the warm-up to prevent it from overwhelming the reconstruction loss.
             # w_vq = 0.1  # A common value used in many VQ-VAE papers.
             # Reduced loss_util weight from 1.0 to 0.02 because we have reset_dead_codes handling utilization now.
-            loss = loss_rec + 0.25 * loss_util + loss_self_entropy + loss_ortho
+            loss = loss_rec + 0.25 * loss_util + loss_self_entropy + loss_geo
 
             # Backward pass and optimization
             loss.backward()
@@ -244,7 +262,7 @@ def main():
             train_loss_rec += loss_rec.item()
             train_loss_util += loss_util.item()
             train_loss_self_entropy += loss_self_entropy.item()
-            train_loss_ortho += loss_ortho.item()
+            train_loss_geo += loss_geo.item()
             train_util += util.item()
 
             progress_bar.set_postfix({
@@ -261,7 +279,7 @@ def main():
         avg_train_loss_rec = train_loss_rec / len(train_loader)
         avg_train_loss_util = train_loss_util / len(train_loader)
         avg_train_loss_self_entropy = train_loss_self_entropy / len(train_loader)
-        avg_train_loss_ortho = train_loss_ortho / len(train_loader)
+        avg_train_loss_geo = train_loss_geo / len(train_loader)
         avg_train_util = train_util / len(train_loader)
 
         # --- Validation ---
@@ -270,27 +288,30 @@ def main():
         val_loss_util = 0.0
         val_loss_self_entropy = 0.0
         val_util = 0.0
-        val_loss_ortho = 0.0
+        val_loss_geo = 0.0
 
         with torch.no_grad():
             for batch in val_loader:
                 batch = batch.to(device)
                 x_hat, loss_util, loss_self_entropy, util = model(batch)
                 loss_rec = F.mse_loss(x_hat, batch)
-                loss_ortho = calculate_loss_ortho(model)
+                if args.geo_loss_type == 'pairwise_cosine':
+                    loss_geo = calculate_loss_pairwise_cosine(model)
+                else:
+                    loss_geo = calculate_loss_ortho(model)
 
                 val_loss_rec += loss_rec.item()
                 val_loss_util += loss_util.item()
                 val_loss_self_entropy += loss_self_entropy.item()
                 val_util += util.item()
-                val_loss_ortho += loss_ortho.item()
+                val_loss_geo += loss_geo.item()
 
         avg_val_loss_rec = val_loss_rec / len(val_loader)
         avg_val_loss_util = val_loss_util / len(val_loader)
         avg_val_loss_self_entropy = val_loss_self_entropy / len(val_loader)
         avg_val_util = val_util / len(val_loader)
-        avg_val_loss_ortho = val_loss_ortho / len(val_loader)   
-        val_total_loss = avg_val_loss_rec + 0.25 * avg_val_loss_util + avg_val_loss_self_entropy + avg_val_loss_ortho
+        avg_val_loss_geo = val_loss_geo / len(val_loader)
+        val_total_loss = avg_val_loss_rec + 0.25 * avg_val_loss_util + avg_val_loss_self_entropy + avg_val_loss_geo
         if val_total_loss < best_metric:
             best_metric = val_total_loss
             best_epoch = epoch + 1
@@ -301,10 +322,10 @@ def main():
 
         save_to_log(f"---- Epoch {epoch + 1} Summary ----", working_dir=working_dir, print_msg=True)
         save_to_log(
-            f"Training:   Rec Loss: {avg_train_loss_rec:.4f}, Utilization Loss: {avg_train_loss_util:.4f}, Self Entropy Loss: {avg_train_loss_self_entropy:.4f}, Ortho Loss: {avg_train_loss_ortho:.4f}, Utilization: {avg_train_util:.2f}",
+            f"Training:   Rec Loss: {avg_train_loss_rec:.4f}, Utilization Loss: {avg_train_loss_util:.4f}, Self Entropy Loss: {avg_train_loss_self_entropy:.4f}, Geo Loss: {avg_train_loss_geo:.4f}, Utilization: {avg_train_util:.2f}",
             working_dir=working_dir, print_msg=True)
         save_to_log(
-            f"Validation: Rec Loss: {avg_val_loss_rec:.4f}, Utilization Loss: {avg_val_loss_util:.4f}, Self Entropy Loss: {avg_val_loss_self_entropy:.4f}, Ortho Loss: {avg_val_loss_ortho:.4f}, Utilization: {avg_val_util:.2f}",
+            f"Validation: Rec Loss: {avg_val_loss_rec:.4f}, Utilization Loss: {avg_val_loss_util:.4f}, Self Entropy Loss: {avg_val_loss_self_entropy:.4f}, Geo Loss: {avg_val_loss_geo:.4f}, Utilization: {avg_val_util:.2f}",
             working_dir=working_dir, print_msg=True)
         save_to_log("----------------------------\n", working_dir=working_dir, print_msg=True)
 
