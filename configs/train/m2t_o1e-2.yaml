@@ -11,6 +11,17 @@ NUM_NODES: 1
 CODEBOOK_PATH: checkpoints/dvq-gsst.pt
 
 # =====================================================
+# Codebook Initialization Method
+# =====================================================
+# Options:
+#   'sparse'             - Fixed sparse random projection matrix (default)
+#   'linear_projection'  - Learnable nn.Linear projection trained end-to-end
+#                           The frozen codebook is projected via a trainable Linear(code_dim, embed_dim).
+#                           Preserves codebook structure while adapting to the LLM embedding space.
+#   'random'             - Random initialization (codebook not used)
+CODEBOOK_INIT_METHOD: 'sparse'
+
+# =====================================================
 # LoRA Configuration for Parameter-Efficient Training
 # =====================================================
 LORA:

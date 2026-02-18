@@ -166,6 +166,9 @@ def get_embedding_weight_from_model(model) -> torch.Tensor:
     1. MoT Architecture: Motion tokens in separate pre_processors[1]
     2. Standard Architecture: Motion tokens appended to shared text embedding
     
+    Also supports CodebookLinearProjection, which computes weights dynamically
+    via its .weight property (projection of frozen codebook).
+    
     Args:
         model: The language model, possibly wrapped by PEFT/LoRA
         
@@ -181,9 +184,15 @@ def get_embedding_weight_from_model(model) -> torch.Tensor:
     # Check for MoT architecture (has pre_processors with motion embedding)
     if hasattr(base_model, 'pre_processors') and len(base_model.pre_processors) > 1:
         # MoT Architecture: Return motion embedding from pre_processors[1]
+        # Works for both nn.Embedding and CodebookLinearProjection (via .weight property)
         motion_embedding = base_model.pre_processors[1]
         if hasattr(motion_embedding, 'weight'):
             return motion_embedding.weight
+    
+    # Check for CodebookLinearProjection registered on the language model
+    # (used in Standard architecture with linear_projection init method)
+    if hasattr(base_model, 'codebook_projection'):
+        return base_model.codebook_projection.weight
     
     # Standard Architecture: Return shared text embedding (contains motion tokens)
     # For GPT2

@@ -212,3 +212,4 @@ datasets/
 experiments/
 results/
 huggingface_export/
+configs/server/*

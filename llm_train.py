@@ -154,6 +154,103 @@ def resolve_codebook_path(cfg, logger=None) -> str:
     return configured_path or preferred_path
 
 
+class CodebookLinearProjection(nn.Module):
+    """
+    Learnable linear projection from frozen DVQ codebook to LLM embedding space.
+
+    Instead of using nn.Embedding with fixed or sparse-projected weights,
+    this module stores the frozen VQ-VAE codebook and learns a linear
+    transformation to map codebook vectors to the target embedding dimension.
+
+    Advantages over sparse projection:
+    - The projection is learned end-to-end during training
+    - Preserves codebook structure while adapting to the LLM's embedding space
+    - Fewer parameters than full embedding (code_dim * embed_dim vs num_codes * embed_dim
+      when code_dim < num_codes)
+
+    Args:
+        codebook_weight: Tensor [num_codes, code_dim] - frozen codebook
+        embed_dim: Target embedding dimension (e.g., 768 for GPT2)
+        num_embeddings: Total vocabulary size (may exceed num_codes for special tokens)
+        padding_idx: Optional padding token index
+    """
+
+    def __init__(self, codebook_weight: torch.Tensor, embed_dim: int,
+                 num_embeddings: int = None, padding_idx: int = None):
+        super().__init__()
+        num_codes, code_dim = codebook_weight.shape
+
+        if num_embeddings is None:
+            num_embeddings = num_codes
+
+        # Frozen codebook (not trainable)
+        self.register_buffer('codebook', codebook_weight.clone().detach().float())
+
+        # Learnable projection: code_dim -> embed_dim
+        self.projection = nn.Linear(code_dim, embed_dim, bias=True)
+
+        # Xavier initialization
+        nn.init.xavier_uniform_(self.projection.weight)
+        nn.init.zeros_(self.projection.bias)
+
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embed_dim
+        self.padding_idx = padding_idx
+        self.num_codes = num_codes
+        self.code_dim = code_dim
+
+        # For tokens beyond the codebook (e.g., special tokens like pad/eos),
+        # use a standard learnable embedding
+        if num_embeddings > num_codes:
+            self.extra_embeddings = nn.Embedding(
+                num_embeddings - num_codes, embed_dim
+            )
+        else:
+            self.extra_embeddings = None
+
+    @property
+    def weight(self):
+        """Compute and return projected weights for compatibility with code
+        that accesses .weight (e.g., orthogonality loss)."""
+        projected = self.projection(self.codebook)
+        if self.extra_embeddings is not None:
+            projected = torch.cat([projected, self.extra_embeddings.weight], dim=0)
+        return projected
+
+    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """
+        Compute embeddings by projecting frozen codebook vectors.
+
+        Args:
+            input_ids: Token indices of any shape [...]
+        Returns:
+            embeddings: [..., embed_dim]
+        """
+        original_shape = input_ids.shape
+        flat_ids = input_ids.reshape(-1)
+        safe_ids = flat_ids.clamp(0, self.num_embeddings - 1)
+
+        is_codebook = safe_ids < self.num_codes
+
+        result = torch.zeros(flat_ids.shape[0], self.embedding_dim,
+                             device=input_ids.device, dtype=self.projection.weight.dtype)
+
+        if is_codebook.any():
+            cb_ids = safe_ids[is_codebook]
+            cb_vectors = self.codebook[cb_ids]            # [N, code_dim]
+            result[is_codebook] = self.projection(cb_vectors)  # [N, embed_dim]
+
+        if self.extra_embeddings is not None and (~is_codebook).any():
+            extra_ids = safe_ids[~is_codebook] - self.num_codes
+            result[~is_codebook] = self.extra_embeddings(extra_ids)
+
+        if self.padding_idx is not None:
+            padding_mask = flat_ids == self.padding_idx
+            result[padding_mask] = 0.0
+
+        return result.reshape(*original_shape, self.embedding_dim)
+
+
 def create_sparse_projection(input_dim: int, output_dim: int, sparsity: float = 0.9, 
                              seed: int = 42) -> torch.Tensor:
     """
@@ -200,46 +297,95 @@ def create_sparse_projection(input_dim: int, output_dim: int, sparsity: float = 
 def initialize_motion_token_embeddings(model, codebook_weight: torch.Tensor, 
                                        original_vocab_size: int = 50257,
                                        model_type: str = "gpt2",
+                                       init_method: str = "sparse",
                                        logger=None):
     """
-    Initialize motion token embeddings using projected VQ-VAE codebook weights.
+    Initialize motion token embeddings using VQ-VAE codebook weights.
     
     Supports two architectures:
     1. MoT architecture (GPT2): Motion tokens have separate embedding layer (pre_processors[1])
     2. Standard architecture (LLaMA): Motion tokens are appended to text vocab in shared embedding
     
+    Supports three initialization methods:
+    1. 'sparse': Fixed sparse random projection (default, current behavior)
+    2. 'linear_projection': Learnable nn.Linear projection trained end-to-end
+    3. 'random': Random initialization (codebook not used)
+    
     Args:
-        model: The MotGPTOrtho model
+        model: The GeoMotionGPT model
         codebook_weight: Tensor of shape [512, 512] from VQ-VAE
         original_vocab_size: Original vocab size (50257 for GPT2, 128256 for LLaMA)
         model_type: "gpt2" or "llama"
+        init_method: Initialization method ('sparse', 'linear_projection', or 'random')
         logger: Optional logger
     """
     lm = model.lm.language_model
     num_codes, code_dim = codebook_weight.shape  # [512, 512]
     
+    if logger:
+        logger.info(f"Codebook init method: {init_method}")
+    
     # Check if this is MoT architecture (has pre_processors)
     is_mot_architecture = hasattr(lm, 'pre_processors') and len(lm.pre_processors) > 1
     
     if is_mot_architecture:
+        _init_mot_architecture(model, lm, codebook_weight, num_codes, code_dim,
+                               init_method, model_type, logger)
+    else:
+        _init_standard_architecture(model, lm, codebook_weight, num_codes, code_dim,
+                                     original_vocab_size, init_method, model_type, logger)
+
+
+def _init_mot_architecture(model, lm, codebook_weight, num_codes, code_dim,
+                            init_method, model_type, logger):
+    """Initialize motion embeddings for MoT architecture (separate pre_processors)."""
+    if logger:
+        logger.info(f"=" * 60)
+        logger.info(f"[MoT Architecture] Initializing motion embedding (pre_processors[1])")
+    
+    motion_embedding_layer = lm.pre_processors[1]  # motion_und_head
+    motion_lm_head = lm.post_processors[1]  # motion_gen_head
+    
+    motion_vocab_size, mot_embed_dim = motion_embedding_layer.weight.shape
+    
+    if logger:
+        logger.info(f"  Model type: {model_type}")
+        logger.info(f"  VQ-VAE Codebook: {num_codes} codes × {code_dim} dim")
+        logger.info(f"  Motion embedding: {motion_vocab_size} vocab × {mot_embed_dim} dim")
+        logger.info(f"  Init method: {init_method}")
+    
+    if init_method == 'linear_projection':
         # =====================================================
-        # MoT Architecture: Initialize pre_processors[1] (motion embedding)
+        # Learnable Linear Projection: Replace nn.Embedding with CodebookLinearProjection
         # =====================================================
+        padding_idx = motion_embedding_layer.padding_idx if hasattr(motion_embedding_layer, 'padding_idx') else None
+        codebook_proj = CodebookLinearProjection(
+            codebook_weight=codebook_weight,
+            embed_dim=mot_embed_dim,
+            num_embeddings=motion_vocab_size,
+            padding_idx=padding_idx,
+        )
+        # Move to the same device and dtype
+        device = motion_embedding_layer.weight.device
+        codebook_proj = codebook_proj.to(device)
+        
+        # Replace the motion embedding layer with learnable projection
+        lm.pre_processors[1] = codebook_proj
+        
+        # Also register on the parent model for easy access
+        model.codebook_projection = codebook_proj
+        
+        proj_params = sum(p.numel() for p in codebook_proj.parameters() if p.requires_grad)
         if logger:
+            logger.info(f"  Replaced pre_processors[1] with CodebookLinearProjection")
+            logger.info(f"  Projection: Linear({code_dim} -> {mot_embed_dim})")
+            logger.info(f"  Learnable projection params: {proj_params:,}")
             logger.info(f"=" * 60)
-            logger.info(f"[MoT Architecture] Initializing motion embedding (pre_processors[1])")
-        
-        motion_embedding_layer = lm.pre_processors[1]  # motion_und_head
-        motion_lm_head = lm.post_processors[1]  # motion_gen_head
-        
-        motion_vocab_size, mot_embed_dim = motion_embedding_layer.weight.shape
-        
-        if logger:
-            logger.info(f"  Model type: {model_type}")
-            logger.info(f"  VQ-VAE Codebook: {num_codes} codes × {code_dim} dim")
-            logger.info(f"  Motion embedding: {motion_vocab_size} vocab × {mot_embed_dim} dim")
-        
-        # Create sparse projection to mot_embed_dim
+    
+    elif init_method == 'sparse':
+        # =====================================================
+        # Sparse Projection: Fixed sparse random matrix (original behavior)
+        # =====================================================
         projection_matrix = create_sparse_projection(
             input_dim=code_dim, 
             output_dim=mot_embed_dim,
@@ -248,7 +394,6 @@ def initialize_motion_token_embeddings(model, codebook_weight: torch.Tensor,
         )
         projected_codebook = codebook_weight @ projection_matrix
         
-        # Normalize
         with torch.no_grad():
             target_std = 0.02
             projected_norms = projected_codebook.norm(dim=1, keepdim=True)
@@ -263,54 +408,131 @@ def initialize_motion_token_embeddings(model, codebook_weight: torch.Tensor,
                     motion_lm_head.weight.device).to(motion_lm_head.weight.dtype)
         
         if logger:
-            logger.info(f"  Initialized {num_to_init} motion embeddings")
+            logger.info(f"  Initialized {num_to_init} motion embeddings via sparse projection")
             logger.info(f"=" * 60)
+    
+    else:  # 'random' or unknown
+        if logger:
+            logger.info(f"  Using default random initialization for motion embeddings")
+            logger.info(f"=" * 60)
+
+
+def _init_standard_architecture(model, lm, codebook_weight, num_codes, code_dim,
+                                 original_vocab_size, init_method, model_type, logger):
+    """Initialize motion embeddings for Standard architecture (shared embedding)."""
+    if logger:
+        logger.info(f"=" * 60)
+        logger.info(f"[Standard Architecture] Initializing motion tokens in shared embedding")
+    
+    # Get the shared embedding layer
+    if model_type == "gpt2":
+        embedding_layer = lm.transformer.wte
+        lm_head = lm.lm_head if hasattr(lm, 'lm_head') else None
+    elif model_type == "llama":
+        embedding_layer = lm.model.embed_tokens
+        lm_head = lm.lm_head if hasattr(lm, 'lm_head') else None
+    elif model_type == "qwen":
+        embedding_layer = lm.model.embed_tokens
+        lm_head = lm.lm_head if hasattr(lm, 'lm_head') else None
     else:
-        # =====================================================
-        # Standard Architecture: Initialize text embedding layer at motion token indices
-        # Motion tokens are appended after original vocab
-        # =====================================================
         if logger:
+            logger.warning(f"Unknown model_type {model_type}")
+        return
+    
+    total_vocab_size, hidden_dim = embedding_layer.weight.shape
+    
+    if logger:
+        logger.info(f"  Model type: {model_type}")
+        logger.info(f"  VQ-VAE Codebook: {num_codes} codes × {code_dim} dim")
+        logger.info(f"  Shared embedding: {total_vocab_size} vocab × {hidden_dim} hidden")
+        logger.info(f"  Original vocab size: {original_vocab_size}")
+        logger.info(f"  Motion token indices: {original_vocab_size} to {original_vocab_size + num_codes - 1}")
+        logger.info(f"  Init method: {init_method}")
+    
+    if init_method == 'linear_projection':
+        # =====================================================
+        # Learnable Linear Projection for Standard Architecture
+        # - Store CodebookLinearProjection as a submodule
+        # - Register a forward hook on the embedding layer to replace
+        #   motion token embeddings with projected codebook vectors
+        # - Gradient flows through the projection layer during backprop
+        # =====================================================
+        num_motion_embeddings = max(total_vocab_size - original_vocab_size, num_codes)
+        codebook_proj = CodebookLinearProjection(
+            codebook_weight=codebook_weight,
+            embed_dim=hidden_dim,
+            num_embeddings=num_motion_embeddings,
+        )
+        device = embedding_layer.weight.device
+        codebook_proj = codebook_proj.to(device)
+        
+        # Register as submodule on both the parent model and the language model
+        # so parameters are included in the optimizer and checkpointing
+        model.codebook_projection = codebook_proj
+        lm.codebook_projection = codebook_proj
+        
+        # Register forward hook on embedding layer to replace motion token embeddings
+        def _create_projection_forward_hook(proj_module, orig_vocab_size):
+            def hook(module, input, output):
+                input_ids = input[0]
+                motion_mask = input_ids >= orig_vocab_size
+                if not motion_mask.any():
+                    return output
+                # Compute projected embeddings for motion tokens
+                motion_ids = input_ids[motion_mask] - orig_vocab_size
+                projected = proj_module(motion_ids)
+                # Clone to avoid in-place modification issues with autograd
+                new_output = output.clone()
+                new_output[motion_mask] = projected.to(output.dtype)
+                return new_output
+            return hook
+        
+        embedding_layer.register_forward_hook(
+            _create_projection_forward_hook(codebook_proj, original_vocab_size)
+        )
+        
+        # Also initialize the static embedding weights with projected values
+        # (useful for warmup and for lm_head if not hooked)
+        with torch.no_grad():
+            initial_projected = codebook_proj.projection(codebook_proj.codebook)
+            # Normalize to match existing embedding scale
+            existing_norms = embedding_layer.weight[:original_vocab_size].float().norm(dim=1)
+            mean_norm = existing_norms.mean().item()
+            proj_norms = initial_projected.norm(dim=1, keepdim=True)
+            initial_projected = initial_projected / (proj_norms + 1e-8) * mean_norm
+            
+            motion_start_idx = original_vocab_size
+            motion_end_idx = original_vocab_size + num_codes
+            final_embeddings = initial_projected.to(device).to(embedding_layer.weight.dtype)
+            if embedding_layer.weight.dtype == torch.float16:
+                final_embeddings = final_embeddings.clamp(-65000, 65000)
+            embedding_layer.weight[motion_start_idx:motion_end_idx] = final_embeddings
+            
+            if lm_head is not None and lm_head.weight is not embedding_layer.weight:
+                lm_head.weight[motion_start_idx:motion_end_idx] = final_embeddings
+        
+        proj_params = sum(p.numel() for p in codebook_proj.parameters() if p.requires_grad)
+        if logger:
+            logger.info(f"  Registered CodebookLinearProjection with forward hook")
+            logger.info(f"  Projection: Linear({code_dim} -> {hidden_dim})")
+            logger.info(f"  Learnable projection params: {proj_params:,}")
             logger.info(f"=" * 60)
-            logger.info(f"[Standard Architecture] Initializing motion tokens in shared embedding")
-        
-        # Get the shared embedding layer
-        if model_type == "gpt2":
-            embedding_layer = lm.transformer.wte
-            lm_head = lm.lm_head if hasattr(lm, 'lm_head') else None
-        elif model_type == "llama":
-            embedding_layer = lm.model.embed_tokens
-            lm_head = lm.lm_head if hasattr(lm, 'lm_head') else None
-        elif model_type == "qwen":
-            embedding_layer = lm.model.embed_tokens
-            lm_head = lm.lm_head if hasattr(lm, 'lm_head') else None
-        else:
-            if logger:
-                logger.warning(f"Unknown model_type {model_type}")
-            return
-        
-        total_vocab_size, hidden_dim = embedding_layer.weight.shape
-        
-        if logger:
-            logger.info(f"  Model type: {model_type}")
-            logger.info(f"  VQ-VAE Codebook: {num_codes} codes × {code_dim} dim")
-            logger.info(f"  Shared embedding: {total_vocab_size} vocab × {hidden_dim} hidden")
-            logger.info(f"  Original vocab size: {original_vocab_size}")
-            logger.info(f"  Motion token indices: {original_vocab_size} to {original_vocab_size + num_codes - 1}")
-        
-        # Create sparse projection to hidden_dim
+    
+    elif init_method == 'sparse':
+        # =====================================================
+        # Sparse Projection: Fixed sparse random matrix (original behavior)
+        # =====================================================
         # IMPORTANT: Do all computation in float32 to avoid numerical issues with float16
         projection_matrix = create_sparse_projection(
             input_dim=code_dim, 
             output_dim=hidden_dim,
             sparsity=0.9,
             seed=42
-        ).float()  # Ensure float32
+        ).float()
         
-        codebook_float = codebook_weight.float()  # Ensure float32
+        codebook_float = codebook_weight.float()
         projected_codebook = codebook_float @ projection_matrix
         
-        # Normalize to match existing embedding scale
         with torch.no_grad():
             existing_norms = embedding_layer.weight[:original_vocab_size].float().norm(dim=1)
             mean_norm = existing_norms.mean().item()
@@ -318,25 +540,19 @@ def initialize_motion_token_embeddings(model, codebook_weight: torch.Tensor,
             if logger:
                 logger.info(f"  Existing embedding norms: mean={mean_norm:.4f}")
             
-            # Normalize in float32
             projected_norms = projected_codebook.norm(dim=1, keepdim=True)
             projected_codebook = projected_codebook / (projected_norms + 1e-8) * mean_norm
             
-            # Check for NaN/Inf before assignment
             if torch.isnan(projected_codebook).any() or torch.isinf(projected_codebook).any():
                 if logger:
                     logger.warning(f"  WARNING: projected_codebook has NaN/Inf! Using random init instead.")
-                # Fall back to random initialization
                 projected_codebook = torch.randn(num_codes, hidden_dim) * 0.02
             
-            # Initialize motion tokens in shared embedding
             motion_start_idx = original_vocab_size
             motion_end_idx = original_vocab_size + num_codes
             
-            # Convert to target dtype at the very end
             final_embeddings = projected_codebook.to(embedding_layer.weight.device).to(embedding_layer.weight.dtype)
             
-            # Clamp to safe range for float16 (max ~65504)
             if embedding_layer.weight.dtype == torch.float16:
                 final_embeddings = final_embeddings.clamp(-65000, 65000)
             
@@ -347,12 +563,16 @@ def initialize_motion_token_embeddings(model, codebook_weight: torch.Tensor,
                 logger.info(f"  Final embedding has NaN: {torch.isnan(final_embeddings).any()}")
                 logger.info(f"  Final embedding has Inf: {torch.isinf(final_embeddings).any()}")
             
-            # Also init lm_head if not tied
             if lm_head is not None and lm_head.weight is not embedding_layer.weight:
                 lm_head.weight[motion_start_idx:motion_end_idx] = final_embeddings
         
         if logger:
-            logger.info(f"  Initialized {num_codes} motion token embeddings")
+            logger.info(f"  Initialized {num_codes} motion token embeddings via sparse projection")
+            logger.info(f"=" * 60)
+    
+    else:  # 'random' or unknown
+        if logger:
+            logger.info(f"  Using default random initialization for motion embeddings")
             logger.info(f"=" * 60)
 
 
@@ -586,13 +806,24 @@ def freeze_non_motion_embeddings(model, original_vocab_size: int, model_type: st
         # Ensure motion embedding is trainable
         motion_embed = base_model.pre_processors[1]
         motion_lm_head = base_model.post_processors[1] if len(base_model.post_processors) > 1 else None
-        motion_embed.weight.requires_grad = True
+        
+        # CodebookLinearProjection uses learnable projection params (already requires_grad=True)
+        # Standard nn.Embedding uses .weight parameter directly
+        if hasattr(motion_embed, 'projection'):
+            # CodebookLinearProjection: ensure projection params are trainable
+            for p in motion_embed.parameters():
+                p.requires_grad = True
+            if logger:
+                proj_params = sum(p.numel() for p in motion_embed.parameters() if p.requires_grad)
+                logger.info(f"  Motion embedding (CodebookLinearProjection) trainable params: {proj_params:,}")
+        else:
+            motion_embed.weight.requires_grad = True
         if motion_lm_head is not None:
             motion_lm_head.weight.requires_grad = True
         
         if logger:
             logger.info(f"  Text embedding frozen: {text_embed.weight.shape}")
-            logger.info(f"  Motion embedding trainable: {motion_embed.weight.shape}")
+            logger.info(f"  Motion embedding trainable")
             logger.info(f"=" * 60)
     else:
         # =====================================================
@@ -725,12 +956,17 @@ def main():
             # Load VQ-VAE codebook weights
             codebook_weight = load_vqvae_codebook(codebook_path, logger)
             
-            # Initialize motion token embeddings with sparse projection
+            # Determine initialization method from config
+            # Options: 'sparse' (default), 'linear_projection', 'random'
+            init_method = str(cfg.get('CODEBOOK_INIT_METHOD', 'sparse')).strip().lower()
+            
+            # Initialize motion token embeddings
             initialize_motion_token_embeddings(
                 model=model,
                 codebook_weight=codebook_weight,
                 original_vocab_size=original_vocab_size,
                 model_type=model_type,
+                init_method=init_method,
                 logger=logger
             )
         except Exception as e:
@@ -795,6 +1031,7 @@ def main():
         if len(cfg.DEVICE) > 1 else 'auto',
         benchmark=False,
         deterministic=False,
+        num_sanity_val_steps=0,
         accumulate_grad_batches=cfg.TRAIN.accumulate_grad_batches,
         precision=train_precision,
         gradient_clip_val=gradient_clip,
