@@ -14,8 +14,8 @@ Key Features:
 Usage:
     python train_ortho.py --cfg configs/m2t_custom_ortho.yaml
 
-The orthogonality loss weight (lambda_ortho) can be configured in the YAML file
-under model.params.lambda_ortho
+The geometry regularization weight (lambda_geo) can be configured in the YAML file
+under model.params.lambda_geo
 """
 
 import os
@@ -882,12 +882,12 @@ def main():
     logger = create_logger(cfg, phase="train")  # create logger
     logger.info(OmegaConf.to_yaml(cfg))  # print config file
 
-    # Log orthogonality loss info if using MotGPTOrtho
+    # Log geometry regularization setup (without printing loss values)
     if 'ortho' in cfg.model.target.lower():
-        lambda_ortho = cfg.model.params.get('lambda_ortho', 0.1)
+        geo_loss_type = str(cfg.model.params.get('geo_loss_type', 'ortho'))
         logger.info(f"=" * 50)
-        logger.info(f"Using MotGPTOrtho with orthogonality regularization")
-        logger.info(f"lambda_ortho = {lambda_ortho}")
+        logger.info(f"Using MotGPTOrtho with geometry regularization")
+        logger.info(f"geo_loss_type = {geo_loss_type}")
         logger.info(f"=" * 50)
 
     # Seed

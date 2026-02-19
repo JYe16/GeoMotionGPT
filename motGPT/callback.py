@@ -6,7 +6,7 @@ from pytorch_lightning.callbacks import Callback, RichProgressBar, ModelCheckpoi
 
 class LossCSVLogger(Callback):
     """
-    Callback to log total loss and orthogonality loss at each epoch end
+    Callback to log total loss at each epoch end
     and save to a CSV file when training completes.
     """
     
@@ -19,7 +19,7 @@ class LossCSVLogger(Callback):
         super().__init__()
         self.output_dir = output_dir
         self.filename = filename
-        self.epoch_losses = []  # List of dicts: {epoch, total_loss, ortho_loss}
+        self.epoch_losses = []  # List of dicts: {epoch, total_loss}
     
     def on_train_epoch_end(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Record losses at the end of each training epoch."""
@@ -31,25 +31,14 @@ class LossCSVLogger(Callback):
         if total_loss is not None:
             total_loss = total_loss.item() if hasattr(total_loss, 'item') else float(total_loss)
         
-        # Get orthogonality loss (logged as "train/ortho_loss_epoch")
-        ortho_loss = metrics.get("train/ortho_loss_epoch", None)
-        if ortho_loss is None:
-            # Try alternative key
-            ortho_loss = metrics.get("train/ortho_loss", None)
-        if ortho_loss is not None:
-            ortho_loss = ortho_loss.item() if hasattr(ortho_loss, 'item') else float(ortho_loss)
-        else:
-            ortho_loss = 0.0  # Default to 0 if not found (lambda_ortho might be 0)
-        
         self.epoch_losses.append({
             "epoch": epoch,
-            "total_loss": total_loss,
-            "ortho_loss": ortho_loss
+            "total_loss": total_loss
         })
         
         # Also log to console for visibility
         if trainer.global_rank == 0:
-            print(f"[LossCSVLogger] Epoch {epoch}: total_loss={total_loss}, ortho_loss={ortho_loss}")
+            print(f"[LossCSVLogger] Epoch {epoch}: total_loss={total_loss}")
     
     def on_train_end(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Save all recorded losses to CSV when training ends."""
@@ -60,7 +49,7 @@ class LossCSVLogger(Callback):
         csv_path = os.path.join(self.output_dir, self.filename)
         
         with open(csv_path, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=["epoch", "total_loss", "ortho_loss"])
+            writer = csv.DictWriter(f, fieldnames=["epoch", "total_loss"])
             writer.writeheader()
             writer.writerows(self.epoch_losses)
         

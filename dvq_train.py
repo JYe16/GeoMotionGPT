@@ -356,6 +356,7 @@ def main():
     # --- Save only the best model found during training ---
     assert best_state is not None, "No best model captured; check training loop."
     final_model_path = os.path.join('checkpoints', f'{args.dataset}-dvq-{args.quantizer}.pt')
+    os.makedirs(os.path.dirname(final_model_path), exist_ok=True)
     torch.save(best_state, final_model_path)
     save_to_log(f"Best model (epoch {best_epoch}, val_total_loss={best_metric:.6f}) saved to {final_model_path}",
                 working_dir=working_dir, print_msg=True)

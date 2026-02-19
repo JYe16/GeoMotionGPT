@@ -142,7 +142,7 @@ def main():
         n_head=12,
         mot_factor=1.0,
         attention_mode="all",
-        lambda_ortho=0.01,
+        lambda_geo=0.01,
     )
     
     # Create model

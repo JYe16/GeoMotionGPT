@@ -213,3 +213,4 @@ experiments/
 results/
 huggingface_export/
 configs/server/*
+configs/assets.yaml
