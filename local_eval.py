@@ -1,5 +1,7 @@
 import json
 import os
+import signal
+import sys
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -13,6 +15,14 @@ from motGPT.data.build_data import build_data
 from motGPT.models.build_model import build_model
 from motGPT.utils.logger import create_logger
 from motGPT.utils.load_checkpoint import load_pretrained, load_pretrained_vae
+
+
+def _sigterm_handler(signum, frame):
+    """Override PL's SIGTERM handler to avoid deadlock with persistent workers."""
+    print(f"\n[local_eval] Received signal {signum}, exiting.", flush=True)
+    sys.exit(1)
+
+signal.signal(signal.SIGTERM, _sigterm_handler)
 
 def print_table(title, metrics, logger=None):
     table = Table(title=title)

@@ -2,23 +2,14 @@
 # This config uses MotGPTOrtho model to encourage orthogonal motion token embeddings
 # Key feature: Initialize motion token embeddings from VQ-VAE codebook via sparse projection
 
-NAME: GPT2_M2T_Ortho1e-2-alt
+NAME: GPT2_KIT_M2T_pcd1e-2
 ACCELERATOR: 'gpu'
 DEVICE: [0]
 NUM_NODES: 1
 
 # Path to VQ-VAE codebook for motion token embedding initialization
-CODEBOOK_PATH: checkpoints/dvq-gsst.pt
-
-# =====================================================
-# Codebook Initialization Method
-# =====================================================
-# Options:
-#   'sparse'             - Fixed sparse random projection matrix (default)
-#   'linear_projection'  - Learnable nn.Linear projection trained end-to-end
-#                           The frozen codebook is projected via a trainable Linear(code_dim, embed_dim).
-#                           Preserves codebook structure while adapting to the LLM embedding space.
-#   'random'             - Random initialization (codebook not used)
+CODEBOOK_PATH: checkpoints/kit-dvq-gsst-pcd.pt
+# Options: 'sparse', 'linear_projection', 'random'
 CODEBOOK_INIT_METHOD: 'sparse'
 
 # =====================================================
@@ -40,15 +31,16 @@ LORA:
     - c_proj
 
 TEST:
-  CHECKPOINTS: null
+  CHECKPOINTS: checkpoints/llm/kit-dvq-gsst-pcd.ckpt
   SPLIT: test
   BATCH_SIZE: 64
-  REPLICATIONS: 1
+  REPLICATION_TIMES: 1
+  NUM_WORKERS: 0
 
 TRAIN:
   STAGE: token_custom
   instruction_type: m2t
-  BATCH_SIZE: 320
+  BATCH_SIZE: 128
   END_EPOCH: 100
   LR_SCHEDULER:
     target: CosineAnnealingLR
@@ -61,12 +53,14 @@ TRAIN:
       lr: 1e-4
       weight_decay: 0.01
 
+DATASET_NAME: kit
+
 DATASET:
   target: motGPT.data.HumanML3D_custom.HumanML3DDataModuleCustom
-  CODE_PATH: motion_tokens
+  CODE_PATH: motion_tokens_pcd
   HUMANML3D:
-    ROOT: /data/jackieye/humanml3d/
-    SPLIT_ROOT: /data/jackieye/humanml3d/
+    ROOT: /data/jackieye/KIT-ML/
+    SPLIT_ROOT: /data/jackieye/KIT-ML/
     FPS: 20
     MIN_MOTION_LEN: 20 
     MAX_MOTION_LEN: 200 
@@ -101,8 +95,9 @@ LOSS:
 
 METRIC:
   TASK: 'm2t'
-  TYPE: []
+  TYPE: ['M2TMetrics']
+  BERT_DEVICE: cpu
 
 LOGGER:
-  TYPE: ['tensorboard']
+  TYPE: ['tensorboard', 'wandb']
   VAL_EVERY_STEPS: 1

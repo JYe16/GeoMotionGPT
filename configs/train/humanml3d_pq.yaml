@@ -2,13 +2,13 @@
 # This config uses MotGPTOrtho model to encourage orthogonal motion token embeddings
 # Key feature: Initialize motion token embeddings from VQ-VAE codebook via sparse projection
 
-NAME: GPT2_M2T_Ortho1e-2-alt
+NAME: GPT2_HumanML3D_PQVAE
 ACCELERATOR: 'gpu'
 DEVICE: [0]
 NUM_NODES: 1
 
 # Path to VQ-VAE codebook for motion token embedding initialization
-CODEBOOK_PATH: checkpoints/dvq-gsst.pt
+CODEBOOK_PATH: checkpoints/humanml3d_pqvae.pt
 
 # =====================================================
 # Codebook Initialization Method
@@ -40,7 +40,7 @@ LORA:
     - c_proj
 
 TEST:
-  CHECKPOINTS: null
+  CHECKPOINTS: checkpoints/llm/humanml3d_pqvae_gpt2.ckpt
   SPLIT: test
   BATCH_SIZE: 64
   REPLICATIONS: 1
@@ -48,7 +48,7 @@ TEST:
 TRAIN:
   STAGE: token_custom
   instruction_type: m2t
-  BATCH_SIZE: 320
+  BATCH_SIZE: 16
   END_EPOCH: 100
   LR_SCHEDULER:
     target: CosineAnnealingLR
@@ -63,7 +63,7 @@ TRAIN:
 
 DATASET:
   target: motGPT.data.HumanML3D_custom.HumanML3DDataModuleCustom
-  CODE_PATH: motion_tokens
+  CODE_PATH: motion_tokens_pq
   HUMANML3D:
     ROOT: /data/jackieye/humanml3d/
     SPLIT_ROOT: /data/jackieye/humanml3d/
@@ -101,8 +101,8 @@ LOSS:
 
 METRIC:
   TASK: 'm2t'
-  TYPE: []
+  TYPE: ['M2TMetrics']
 
 LOGGER:
-  TYPE: ['tensorboard']
+  TYPE: ['tensorboard', 'wandb']
   VAL_EVERY_STEPS: 1

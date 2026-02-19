@@ -39,7 +39,8 @@ class HumanML3DDataModule(BASEDataModule):
         # Mean and std of the dataset
         # if True:
         if cfg.model.params.motion_vae.target.split('.')[-1].lower() == "vqvae":
-            dis_data_root = pjoin(cfg.DATASET.HUMANML3D.MEAN_STD_PATH, 't2m', "VQVAEV3_CB1024_CMT_H1024_NRES3", "meta")
+            vq_subdir = 'kit' if is_kit else 't2m'
+            dis_data_root = pjoin(cfg.DATASET.HUMANML3D.MEAN_STD_PATH, vq_subdir, "VQVAEV3_CB1024_CMT_H1024_NRES3", "meta")
             self.hparams.mean = np.load(pjoin(dis_data_root, "mean.npy"))
             self.hparams.std = np.load(pjoin(dis_data_root, "std.npy"))
         else:
@@ -51,13 +52,22 @@ class HumanML3DDataModule(BASEDataModule):
             self.hparams.mean_eval = np.load(pjoin(data_root, "tmr_mean.npy"))
             self.hparams.std_eval = np.load(pjoin(data_root, "tmr_std.npy"))
         else:
-            dis_data_root_eval = pjoin(cfg.DATASET.HUMANML3D.MEAN_STD_PATH, 't2m', "Comp_v6_KLD01", "meta")
+            # Use correct evaluator stats for KIT vs HumanML3D
+            if is_kit:
+                dis_data_root_eval = pjoin(cfg.DATASET.HUMANML3D.MEAN_STD_PATH, 'kit', "Comp_v6_KLD005", "meta")
+            else:
+                dis_data_root_eval = pjoin(cfg.DATASET.HUMANML3D.MEAN_STD_PATH, 't2m', "Comp_v6_KLD01", "meta")
             self.hparams.mean_eval = np.load(pjoin(dis_data_root_eval, "mean.npy"))
             self.hparams.std_eval = np.load(pjoin(dis_data_root_eval, "std.npy"))
 
         # KIT is 251-dim while default HumanML evaluator stats are 263-dim.
         # If dimensions mismatch, fall back to dataset-native stats to avoid runtime shape errors.
         if self.hparams.mean_eval.shape[0] != self.hparams.mean.shape[0]:
+            import warnings
+            warnings.warn(
+                f"Eval stats dim ({self.hparams.mean_eval.shape[0]}) != dataset dim ({self.hparams.mean.shape[0]}). "
+                f"Falling back to dataset stats for renorm4t2m — this makes renorm4t2m a no-op!"
+            )
             self.hparams.mean_eval = self.hparams.mean.copy()
             self.hparams.std_eval = self.hparams.std.copy()
         # self.hparams.mean_eval = np.load(pjoin(data_root, "Mean.npy"))

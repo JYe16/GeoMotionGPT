@@ -175,7 +175,8 @@ def fk_vectorized(root_pos, root_rot_euler, joint_angles, height_m):
     pos_yup = np.stack([positions[:, :, 0],
                         positions[:, :, 2],
                        -positions[:, :, 1]], axis=-1)
-    pos_yup /= 1000.0  # mm -> m
+    # Keep positions in mm (matching TM2T / HumanML3D evaluator convention)
+    # pos_yup /= 1000.0  # mm -> m  (REMOVED: TM2T expects mm-scale features)
     return pos_yup.astype(np.float64)
 
 
