@@ -1,5 +1,5 @@
-# M2T Training with Orthogonality Regularization
-# This config uses MotGPTOrtho model to encourage orthogonal motion token embeddings
+# M2T Training with Geometry Regularization
+# This config uses GeoMotionGPT to regularize motion token embeddings (e.g., pairwise cosine)
 # Key feature: Initialize motion token embeddings from VQ-VAE codebook via sparse projection
 
 NAME: GPT2_M2T_Ortho1e-2-alt
@@ -77,7 +77,7 @@ model:
   params:
     condition: 'motion'
     task: 'm2t'
-    lambda_ortho: 1e-2
+    lambda_geo: 1e-2
     lm:
       target: motGPT.archs.mgpt_lm.MLM
       params:

@@ -57,7 +57,7 @@ model:
   params:
     condition: 'motion'
     task: 'm2t'
-    lambda_ortho: 1e-2
+    lambda_geo: 1e-2
     lm:
       target: motGPT.archs.mgpt_lm.MLM
       params:

@@ -17,6 +17,7 @@ from motGPT.losses.orthogonal import (
     MotionOrthogonalityLoss,
     get_embedding_weight_from_model
 )
+from motGPT.losses.pairwise_cosine_distance import MotionPairwiseCosineDistanceLoss
 from motGPT.models.base import BaseModel
 import json
 from motGPT.utils.render_utils import render_motion
@@ -51,8 +52,9 @@ class GeoMotionGPT(BaseModel):
                  metrics_dict=['TM2TMetrics'],
                  fps=20,
                  guidance_scale=1.0,
-                 # Orthogonality loss parameters
-                 lambda_ortho: float = 0.1,
+                 # Geometry regularization parameters
+                 lambda_geo: float = 0.1,
+                 geo_loss_type: str = 'ortho',
                  **kwargs):
 
         self.save_hyperparameters(ignore='datamodule', logger=False)
@@ -102,33 +104,50 @@ class GeoMotionGPT(BaseModel):
         })
 
         # =====================================================
-        # NEW: Orthogonality loss for motion token embeddings
+        # NEW: Geometry regularization for motion token embeddings
         # =====================================================
-        self.lambda_ortho = lambda_ortho
+        legacy_lambda_ortho = kwargs.pop('lambda_ortho', None)
+        if legacy_lambda_ortho is not None:
+            lambda_geo = legacy_lambda_ortho
+
+        self.lambda_geo = lambda_geo
+        self.lambda_ortho = self.lambda_geo  # backward-compatible alias
+        self.geo_loss_type = str(geo_loss_type).strip().lower()
         motion_codebook_size = lm.get('params', {}).get('motion_codebook_size', 512)
-        self.ortho_loss = MotionOrthogonalityLoss(
-            motion_codebook_size=motion_codebook_size,
-            lambda_ortho=lambda_ortho
-        )
+        if self.geo_loss_type == 'ortho':
+            self.geo_loss = MotionOrthogonalityLoss(
+                motion_codebook_size=motion_codebook_size,
+                lambda_ortho=self.lambda_geo
+            )
+        elif self.geo_loss_type == 'pairwise_cosine':
+            self.geo_loss = MotionPairwiseCosineDistanceLoss(
+                motion_codebook_size=motion_codebook_size,
+                lambda_pairwise=self.lambda_geo
+            )
+        else:
+            raise ValueError(
+                f"Unsupported geo_loss_type='{geo_loss_type}'. "
+                "Expected one of ['ortho', 'pairwise_cosine']."
+            )
         
         # Data transform
         self.feats2joints = datamodule.feats2joints
 
-    def compute_ortho_loss(self) -> torch.Tensor:
+    def compute_geo_loss(self) -> torch.Tensor:
         """
-        Compute the orthogonality regularization loss for motion token embeddings.
+        Compute the geometry regularization loss for motion token embeddings.
         
         Returns:
-            Scalar tensor representing the orthogonality loss.
+            Scalar tensor representing the geometry regularization loss.
         """
         try:
             embedding_weight = get_embedding_weight_from_model(self.lm.language_model)
             device = next(self.lm.language_model.parameters()).device
-            loss = self.ortho_loss(embedding_weight, self.lm.tokenizer, device)
+            loss = self.geo_loss(embedding_weight, self.lm.tokenizer, device)
             
             # Debug: Check for NaN
             if torch.isnan(loss):
-                print(f"[DEBUG] Orthogonality loss is NaN!")
+                print(f"[DEBUG] Geometry regularization loss is NaN!")
                 print(f"[DEBUG] Embedding weight shape: {embedding_weight.shape}")
                 print(f"[DEBUG] Embedding weight dtype: {embedding_weight.dtype}")
                 print(f"[DEBUG] Embedding weight has NaN: {torch.isnan(embedding_weight).any()}")
@@ -138,12 +157,16 @@ class GeoMotionGPT(BaseModel):
             return loss
         except Exception as e:
             # Print the error for debugging
-            print(f"[DEBUG] compute_ortho_loss failed: {e}")
+            print(f"[DEBUG] compute_geo_loss failed: {e}")
             import traceback
             traceback.print_exc()
             # Fallback: return zero loss if something goes wrong
             device = next(self.lm.language_model.parameters()).device
             return torch.zeros((), device=device)
+
+    def compute_ortho_loss(self) -> torch.Tensor:
+        """Backward-compatible wrapper for old call sites."""
+        return self.compute_geo_loss()
 
     def forward(self, batch, task="t2m"):
         texts = batch["text"]
@@ -475,15 +498,11 @@ class GeoMotionGPT(BaseModel):
             loss = self._losses['losses_' + split].update(rs_set)
             
             # =====================================================
-            # NEW: Add orthogonality loss during training
+            # NEW: Add geometry regularization during training
             # =====================================================
-            if self.lambda_ortho > 0:
-                ortho_loss = self.compute_ortho_loss()
-                loss = loss + ortho_loss
-                
-                # Log the orthogonality loss
-                self.log(f"{split}/ortho_loss", ortho_loss, 
-                        on_step=True, on_epoch=True, prog_bar=True, logger=True)
+            if self.lambda_geo > 0:
+                geo_loss = self.compute_geo_loss()
+                loss = loss + geo_loss
         elif self.hparams.stage == 'lm_rl' and split in ['train']:
             rs_set = self.train_rl_forward(batch)
             loss = None
