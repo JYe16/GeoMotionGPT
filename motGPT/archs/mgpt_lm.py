@@ -227,6 +227,19 @@ class MLM(nn.Module):
 
         return outputs
 
+    def _is_m2t_task(self, tasks):
+        """Check if current batch is a motion-to-text task."""
+        if tasks is None:
+            return False
+        try:
+            if isinstance(tasks, (list, tuple)) and len(tasks) > 0:
+                first = tasks[0]
+                if isinstance(first, dict):
+                    return first.get('class', '') == 'm2t'
+            return False
+        except Exception:
+            return False
+
     def forward_dec(
         self,
         texts: List[str],
@@ -239,9 +252,16 @@ class MLM(nn.Module):
         # Tensor to string
         motion_strings = self.motion_token_to_string(motion_tokens, lengths)
 
-        # Supervised or unsupervised
-        condition = random.choice(
-            ['text', 'motion', 'supervised', 'supervised', 'supervised'])
+        # For M2T task: always use supervised condition and mask prompt loss.
+        # For other tasks (t2m, etc.): keep original multi-condition sampling.
+        is_m2t = self._is_m2t_task(tasks)
+
+        if is_m2t:
+            condition = 'supervised'
+        else:
+            # Supervised or unsupervised (original logic for non-m2t tasks)
+            condition = random.choice(
+                ['text', 'motion', 'supervised', 'supervised', 'supervised'])
 
         if condition == 'text':
             labels = texts
@@ -265,18 +285,36 @@ class MLM(nn.Module):
 
         labels_input_ids = inputs.input_ids.to(motion_tokens.device)
         labels_attention_mask = inputs.attention_mask.to(motion_tokens.device)
-        
-        # Debug code commented out
-        # base_model = self.language_model
-        # if hasattr(base_model, 'base_model'):
-        #     base_model = base_model.base_model
-        # if hasattr(base_model, 'model'):
-        #     base_model = base_model.model
-        # ... (debug code removed for clarity)
-        
+
+        # For M2T supervised: mask prompt portion of loss so the model only
+        # learns to generate the text output, not to predict the prompt tokens.
+        # The prompt and output are separated by " \n " in the label string.
+        if is_m2t and condition == 'supervised':
+            # Find the separator token sequence for " \n " and mask everything before it
+            loss_labels = labels_input_ids.clone()
+            # Encode the separator to find its token ids
+            sep_tokens = self.tokenizer.encode(' \n ', add_special_tokens=False)
+            sep_len = len(sep_tokens)
+            for i in range(loss_labels.size(0)):
+                seq = labels_input_ids[i].tolist()
+                # Find the position of " \n " separator
+                sep_pos = -1
+                for j in range(len(seq) - sep_len + 1):
+                    if seq[j:j + sep_len] == sep_tokens:
+                        sep_pos = j
+                        break
+                if sep_pos >= 0:
+                    # Mask prompt (everything up to and including separator) with -100
+                    loss_labels[i, :sep_pos + sep_len] = -100
+            # Mask padding positions (where attention_mask == 0) instead of by
+            # token id, since pad_token == eos_token in GPT-2.
+            loss_labels[labels_attention_mask == 0] = -100
+        else:
+            loss_labels = labels_input_ids
+
         outputs = self.language_model(input_ids=labels_input_ids,
                                       attention_mask=labels_attention_mask,
-                                      labels=labels_input_ids)  # Use labels on correct device
+                                      labels=loss_labels)
 
         return outputs
 
