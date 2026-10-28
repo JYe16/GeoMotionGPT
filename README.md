@@ -4,7 +4,7 @@
 
 ### Geometry-Aligned Motion Understanding with Large Language Models
 
-[![arXiv](https://img.shields.io/badge/arXiv-2601.07632-b31b1b.svg)](https://arxiv.org/abs/2601.07632)
+[![EMNLP 2026](https://img.shields.io/badge/EMNLP-2026-b31b1b.svg)](https://aclanthology.org/2026.emnlp-main.179/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-yellow)](https://huggingface.co/zy22b/GeoMotionGPT)
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/downloads/)
@@ -42,6 +42,7 @@
 
 | Date | Update |
 |------|--------|
+| 🎉 **Oct 2026** | GeoMotionGPT has been published at **EMNLP 2026**! Read the paper on [ACL Anthology](https://aclanthology.org/2026.emnlp-main.179/). |
 | 🎉 **Jan 2026** | Pretrained models available on [HuggingFace](https://huggingface.co/zy22b/GeoMotionGPT) |
 
 ---
@@ -159,14 +160,16 @@ python llm_train.py --cfg configs/train/m2t_o1e-2.yaml
 If you find our work useful for your research, please consider citing:
 
 ```bibtex
-@misc{ye2026geomotiongpt,
-      title={GeoMotionGPT: Geometry-Aligned Motion Understanding with Large Language Models}, 
+@inproceedings{ye-etal-2026-geomotiongpt,
+      title={{GeoMotionGPT}: Geometry-Aligned Motion Understanding with Large Language Models},
       author={Zhankai Ye and Bofan Li and Yukai Jin and Shuoqiu Li and Wei Wang and Yanfu Zhang and Shangqian Gao and Xin Liu},
       year={2026},
-      eprint={2601.07632},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV},
-      url={https://arxiv.org/abs/2601.07632}, 
+      booktitle={Proceedings of the 2026 Conference on Empirical Methods in Natural Language Processing},
+      month=oct,
+      address={Budapest, Hungary},
+      publisher={Association for Computational Linguistics},
+      pages={4114--4129},
+      url={https://aclanthology.org/2026.emnlp-main.179/},
 }
 ```
 
